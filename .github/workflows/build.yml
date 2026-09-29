@@ -1,0 +1,82 @@
+name: Build macOS app
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SING_BOX_VERSION: "1.13.14"
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Catalina-compatible sing-box core
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="sing-box-${SING_BOX_VERSION}-darwin-amd64-legacy-macos-10.13.tar.gz"
+          base="https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}"
+          curl --fail --location --retry 3 --output "$archive" "$base/$archive"
+          curl --fail --location --retry 3 --output checksums.txt "$base/sing-box-${SING_BOX_VERSION}-checksums.txt"
+          curl --fail --location --retry 3 --output .sing-box-license "https://raw.githubusercontent.com/SagerNet/sing-box/v${SING_BOX_VERSION}/LICENSE"
+          grep "$archive" checksums.txt | shasum -a 256 --check
+          mkdir -p .core
+          tar -xzf "$archive" -C .core
+          core_path="$(find .core -type f -name sing-box | head -n 1)"
+          test -n "$core_path"
+          chmod 755 "$core_path"
+          echo "CORE_PATH=$core_path" >> "$GITHUB_ENV"
+
+      - name: Validate VPN engine configuration
+        shell: bash
+        run: "$CORE_PATH check -c Tests/Fixtures/sing-box.json"
+
+      - name: Build, test and package
+        shell: bash
+        env:
+          APP_VERSION: "0.1.${{ github.run_number }}"
+          BUILD_NUMBER: "${{ github.run_number }}"
+        run: bash Scripts/package.sh "$CORE_PATH" .sing-box-license
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MaosVPN-macOS-10.15-Intel
+          path: |
+            dist/MaosVPN-macOS-10.15-Intel.zip
+            dist/MaosVPN-macOS-10.15-Intel.dmg
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              dist/MaosVPN-macOS-10.15-Intel.zip \
+              dist/MaosVPN-macOS-10.15-Intel.dmg \
+              dist/SHA256SUMS.txt \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              dist/MaosVPN-macOS-10.15-Intel.zip \
+              dist/MaosVPN-macOS-10.15-Intel.dmg \
+              dist/SHA256SUMS.txt \
+              --generate-notes \
+              --title "Maos VPN $GITHUB_REF_NAME"
+          fi

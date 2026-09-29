@@ -1,0 +1,68 @@
+name: Bug report / Ошибка
+description: Report a reproducible problem without sharing credentials / Сообщить о воспроизводимой проблеме без секретов
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never paste a subscription URL, UUID, password, key, complete server address, or unredacted log.
+        Никогда не публикуйте ссылку подписки, UUID, пароль, ключ, полный адрес сервера или неочищенный журнал.
+  - type: input
+    id: version
+    attributes:
+      label: Maos VPN version / Версия
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model / Версия macOS и модель Mac
+      placeholder: macOS 10.15.7, MacBookPro11,1
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol / Протокол
+      options:
+        - VLESS
+        - VMess
+        - Trojan
+        - Shadowsocks
+        - Unknown / Неизвестно
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem / Проблема
+      description: What happened and what did you expect? / Что произошло и что ожидалось?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps / Шаги воспроизведения
+      placeholder: |
+        1. Open…
+        2. Click…
+        3. See…
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics / Очищенная диагностика
+      description: Remove every credential and identifying server value first.
+      render: text
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Safety confirmation / Проверка безопасности
+      options:
+        - label: I removed all subscription URLs, credentials, keys, and server addresses. / Я удалил ссылки, credentials, ключи и адреса серверов.
+          required: true
+        - label: I tested the latest release. / Я проверил последнюю версию.
+          required: true

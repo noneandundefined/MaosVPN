@@ -1,0 +1,29 @@
+name: Feature request / Предложение
+description: Suggest a focused improvement / Предложить конкретное улучшение
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem / Проблема пользователя
+      description: Describe the problem before proposing the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution / Предлагаемое решение
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / Альтернативы
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Checklist / Проверка
+      options:
+        - label: This request does not require analytics, advertising, or publishing credentials. / Запрос не требует аналитики, рекламы или публикации секретов.
+          required: true

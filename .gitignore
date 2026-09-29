@@ -1,0 +1,8 @@
+/.build/
+/dist/
+/.core/
+/*.tar.gz
+/checksums.txt
+/.sing-box-license
+.DS_Store
+*.xcuserstate
