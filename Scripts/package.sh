@@ -37,7 +37,24 @@ chmod 755 "$APP_DIR/Contents/MacOS/MaosVPN" "$APP_DIR/Contents/Resources/sing-bo
 ICONSET="$ROOT_DIR/.build/MaosVPN.iconset"
 rm -rf "$ICONSET"
 swift "$ROOT_DIR/Scripts/generate_icon.swift" "$ICONSET"
+
+for icon in \
+  icon_16x16.png icon_16x16@2x.png \
+  icon_32x32.png icon_32x32@2x.png \
+  icon_128x128.png icon_128x128@2x.png \
+  icon_256x256.png icon_256x256@2x.png \
+  icon_512x512.png icon_512x512@2x.png; do
+  if [[ ! -s "$ICONSET/$icon" ]]; then
+    echo "Icon generation failed: $ICONSET/$icon is missing or empty" >&2
+    exit 1
+  fi
+done
+
 iconutil -c icns "$ICONSET" -o "$APP_DIR/Contents/Resources/AppIcon.icns"
+if [[ ! -s "$APP_DIR/Contents/Resources/AppIcon.icns" ]]; then
+  echo "Icon packaging failed: AppIcon.icns is missing or empty" >&2
+  exit 1
+fi
 
 # Ad-hoc signing keeps the bundle internally consistent. The workflow can
 # replace this with Developer ID signing later without changing the app.
