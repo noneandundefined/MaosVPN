@@ -12,6 +12,7 @@ permissions:
 
 env:
   SING_BOX_VERSION: "1.13.14"
+  SING_BOX_SHA256: "ed19e1e7abe1517c6dc898cf31e70d237fd97e71ae6e26ccd8d2ab26e6702f8e"
 
 jobs:
   build:
@@ -28,10 +29,9 @@ jobs:
           set -euo pipefail
           archive="sing-box-${SING_BOX_VERSION}-darwin-amd64-legacy-macos-10.13.tar.gz"
           base="https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}"
-          curl --fail --location --retry 3 --output "$archive" "$base/$archive"
-          curl --fail --location --retry 3 --output checksums.txt "$base/sing-box-${SING_BOX_VERSION}-checksums.txt"
-          curl --fail --location --retry 3 --output .sing-box-license "https://raw.githubusercontent.com/SagerNet/sing-box/v${SING_BOX_VERSION}/LICENSE"
-          grep "$archive" checksums.txt | shasum -a 256 --check
+          curl --fail --location --silent --show-error --retry 3 --output "$archive" "$base/$archive"
+          echo "$SING_BOX_SHA256  $archive" | shasum -a 256 --check
+          curl --fail --location --silent --show-error --retry 3 --output .sing-box-license "https://raw.githubusercontent.com/SagerNet/sing-box/v${SING_BOX_VERSION}/LICENSE"
           mkdir -p .core
           tar -xzf "$archive" -C .core
           core_path="$(find .core -type f -name sing-box | head -n 1)"
