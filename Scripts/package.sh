@@ -67,30 +67,34 @@ ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ROOT_DIR/dist/MaosVPN-macO
 DMG_ROOT="$ROOT_DIR/.build/dmg-root"
 DMG_BACKGROUND="$ROOT_DIR/.build/dmg-background.png"
 DMG_RW="$ROOT_DIR/.build/MaosVPN-readwrite.dmg"
-DMG_MOUNT="$ROOT_DIR/.build/dmg-mount"
-rm -rf "$DMG_ROOT" "$DMG_MOUNT"
+DMG_MOUNT=""
+rm -rf "$DMG_ROOT"
 rm -f "$DMG_RW" "$ROOT_DIR/dist/MaosVPN-macOS-10.15-Intel.dmg"
-mkdir -p "$DMG_ROOT/.background" "$DMG_MOUNT"
+mkdir -p "$DMG_ROOT/.background"
 cp -R "$APP_DIR" "$DMG_ROOT/"
 ln -s /Applications "$DMG_ROOT/Applications"
 swift "$ROOT_DIR/Scripts/generate_dmg_background.swift" "$DMG_BACKGROUND"
 cp "$DMG_BACKGROUND" "$DMG_ROOT/.background/background.png"
 
 hdiutil create -volname "Maos VPN" -srcfolder "$DMG_ROOT" -ov -fs HFS+ -format UDRW "$DMG_RW"
-DEVICE="$(hdiutil attach -readwrite -noverify -noautoopen -mountpoint "$DMG_MOUNT" "$DMG_RW" | awk 'NR == 1 { print $1 }')"
-if [[ -z "$DEVICE" ]]; then
+ATTACH_OUTPUT="$(hdiutil attach -readwrite -noverify -noautoopen "$DMG_RW")"
+DEVICE="$(printf '%s\n' "$ATTACH_OUTPUT" | awk 'NR == 1 { print $1 }')"
+DMG_MOUNT="$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F '\t' '/Apple_HFS/ { print $NF; exit }')"
+if [[ -z "$DEVICE" || -z "$DMG_MOUNT" || ! -d "$DMG_MOUNT" ]]; then
   echo "Could not attach the read-write DMG" >&2
   exit 1
 fi
 cleanup_dmg() {
   if [[ -n "${DEVICE:-}" ]]; then
-    hdiutil detach "$DEVICE" >/dev/null 2>&1 || true
+    hdiutil detach -force "$DEVICE" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup_dmg EXIT
 /usr/bin/chflags hidden "$DMG_MOUNT/.background" || true
 
-if /usr/bin/osascript <<'APPLESCRIPT'
+LAYOUT_CREATED=false
+for attempt in 1 2 3; do
+  if /usr/bin/osascript <<'APPLESCRIPT'
 tell application "Finder"
   tell disk "Maos VPN"
     open
@@ -109,17 +113,35 @@ tell application "Finder"
     open
     update without registering applications
     delay 2
+    close
   end tell
 end tell
 APPLESCRIPT
-then
+  then
+    LAYOUT_CREATED=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$LAYOUT_CREATED" == true ]]; then
   echo "Custom DMG layout created"
 else
   echo "::warning title=DMG layout::Finder could not save the custom layout; packaging a functional fallback DMG."
 fi
 
 sync
-hdiutil detach "$DEVICE"
+DETACHED=false
+for attempt in 1 2 3; do
+  if hdiutil detach "$DEVICE"; then
+    DETACHED=true
+    break
+  fi
+  sleep 2
+done
+if [[ "$DETACHED" != true ]]; then
+  hdiutil detach -force "$DEVICE"
+fi
 DEVICE=""
 trap - EXIT
 hdiutil convert "$DMG_RW" -format UDZO -imagekey zlib-level=9 -o "$ROOT_DIR/dist/MaosVPN-macOS-10.15-Intel.dmg"
