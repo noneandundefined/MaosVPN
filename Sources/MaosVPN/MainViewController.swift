@@ -24,12 +24,11 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     private let outlineView = NSOutlineView()
     private weak var serverScroll: NSScrollView?
-    private var headerHeightConstraint: NSLayoutConstraint?
-    private let searchPill = SearchPill()
-    private let languagePill = LanguagePill()
-    private let addSubscriptionButton = AccentPill()
-    private let autoSwitch = TinySwitch()
-    private let invisibleSwitch = TinySwitch()
+    private let searchField = NSSearchField()
+    private let languagePopup = NSPopUpButton()
+    private let addSubscriptionButton = NSButton()
+    private let autoSwitch = NSSwitch()
+    private let invisibleSwitch = NSSwitch()
     private let statusLabel = NSTextField(labelWithString: L10n.text(.disconnected))
     private let connectionSubtitleLabel = NSTextField(labelWithString: "")
     private let selectedFlagLabel = NSTextField(labelWithString: "")
@@ -42,7 +41,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private let connectButton = PowerButton(title: "", target: nil, action: nil)
     private let progress = NSProgressIndicator()
     private let onboardingURLField = NSTextField()
-    private let onboardingAddButton = AccentPill()
+    private let onboardingAddButton = NSButton()
     private var pingMenuItem: NSMenuItem?
     private var fastestMenuItem: NSMenuItem?
 
@@ -82,7 +81,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             restoreLibrary()
             libraryWasLoaded = true
         }
-        view = FlatView(frame: NSRect(x: 0, y: 0, width: 1080, height: 740))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 460))
         buildCurrentInterface()
     }
 
@@ -113,13 +112,6 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        if let window = view.window, let headerHeightConstraint = headerHeightConstraint {
-            let layoutHeight = window.contentLayoutRect.height
-            let bar = view.bounds.height - layoutHeight
-            if layoutHeight > 100, bar > 28, bar < 80, abs(headerHeightConstraint.constant - bar) > 0.5 {
-                headerHeightConstraint.constant = bar
-            }
-        }
         guard let scroll = serverScroll, let column = outlineView.tableColumns.first else { return }
         let width = scroll.contentSize.width
         if width > 1, abs(column.width - width) > 0.5 {
@@ -133,7 +125,6 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func buildCurrentInterface() {
-        headerHeightConstraint = nil
         serverScroll = nil
         view.subviews.forEach { $0.removeFromSuperview() }
         if isShowingOnboarding {
@@ -144,87 +135,56 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func buildOnboardingInterface() {
-        languagePill.title = AppLanguage.current == .russian ? "Русский" : "English"
-        languagePill.onClick = { [weak self] in self?.showLanguageMenu() }
-
+        configureLanguagePopup()
         let title = NSTextField(labelWithString: AppLanguage.text(
             russian: "Добавьте первую подписку",
             english: "Add your first subscription"
         ))
-        title.font = NSFont.systemFont(ofSize: 28, weight: .bold)
-        title.textColor = Design.primaryText
+        title.font = NSFont.systemFont(ofSize: 20, weight: .semibold)
         title.alignment = .center
         let subtitle = NSTextField(wrappingLabelWithString: AppLanguage.text(
             russian: "Вставьте ссылку — серверы сохранятся локально, а сама ссылка больше не будет показана в приложении.",
             english: "Paste a URL. Servers will be stored locally and the URL will no longer be shown in the app."
         ))
-        subtitle.font = NSFont.systemFont(ofSize: 14)
-        subtitle.textColor = Design.secondaryText
+        subtitle.font = NSFont.systemFont(ofSize: 13)
+        subtitle.textColor = .secondaryLabelColor
         subtitle.alignment = .center
-
         onboardingURLField.placeholderString = "https://example.com/sub/..."
-        onboardingURLField.font = NSFont.systemFont(ofSize: 14)
-        onboardingURLField.textColor = Design.primaryText
-        onboardingURLField.isBordered = false
-        onboardingURLField.drawsBackground = false
-        onboardingURLField.focusRingType = .none
         onboardingURLField.delegate = self
-        let fieldChrome = FieldChrome()
-        fieldChrome.addSubview(onboardingURLField)
-        onboardingURLField.translatesAutoresizingMaskIntoConstraints = false
-
         onboardingAddButton.title = AppLanguage.text(russian: "Добавить подписку", english: "Add subscription")
-        onboardingAddButton.onClick = { [weak self] in self?.importInitialSubscription() }
-
+        onboardingAddButton.bezelStyle = .rounded
+        onboardingAddButton.target = self
+        onboardingAddButton.action = #selector(importInitialSubscription)
+        onboardingAddButton.keyEquivalent = "\r"
         progress.style = .spinning
         progress.controlSize = .small
         progress.isDisplayedWhenStopped = false
         messageLabel.font = NSFont.systemFont(ofSize: 12)
         messageLabel.alignment = .center
         messageLabel.maximumNumberOfLines = 3
-        messageLabel.preferredMaxLayoutWidth = 460
-
-        let card = SoftCard()
-        [title, subtitle, fieldChrome, onboardingAddButton, progress, messageLabel].forEach {
-            card.addSubview($0)
-            $0.translatesAutoresizingMaskIntoConstraints = false
-        }
-        [languagePill, card].forEach {
+        messageLabel.preferredMaxLayoutWidth = 420
+        [languagePopup, title, subtitle, onboardingURLField, onboardingAddButton, progress, messageLabel].forEach {
             view.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
-
         NSLayoutConstraint.activate([
-            languagePill.topAnchor.constraint(equalTo: view.topAnchor, constant: 14),
-            languagePill.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            languagePill.widthAnchor.constraint(equalToConstant: 136),
-            languagePill.heightAnchor.constraint(equalToConstant: 36),
-            card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            card.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 20),
-            card.widthAnchor.constraint(equalToConstant: 560),
-            card.heightAnchor.constraint(equalToConstant: 280),
-            title.topAnchor.constraint(equalTo: card.topAnchor, constant: 36),
-            title.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 32),
-            title.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -32),
+            languagePopup.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
+            languagePopup.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            title.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            title.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -70),
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
-            subtitle.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 48),
-            subtitle.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -48),
-            fieldChrome.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 22),
-            fieldChrome.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 40),
-            fieldChrome.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -40),
-            fieldChrome.heightAnchor.constraint(equalToConstant: 40),
-            onboardingURLField.leadingAnchor.constraint(equalTo: fieldChrome.leadingAnchor, constant: 12),
-            onboardingURLField.trailingAnchor.constraint(equalTo: fieldChrome.trailingAnchor, constant: -12),
-            onboardingURLField.centerYAnchor.constraint(equalTo: fieldChrome.centerYAnchor),
-            onboardingAddButton.topAnchor.constraint(equalTo: fieldChrome.bottomAnchor, constant: 16),
-            onboardingAddButton.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-            onboardingAddButton.widthAnchor.constraint(equalToConstant: 200),
-            onboardingAddButton.heightAnchor.constraint(equalToConstant: 38),
-            progress.leadingAnchor.constraint(equalTo: onboardingAddButton.trailingAnchor, constant: 10),
+            subtitle.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            subtitle.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
+            onboardingURLField.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 16),
+            onboardingURLField.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            onboardingURLField.widthAnchor.constraint(equalToConstant: 360),
+            onboardingAddButton.topAnchor.constraint(equalTo: onboardingURLField.bottomAnchor, constant: 12),
+            onboardingAddButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            progress.leadingAnchor.constraint(equalTo: onboardingAddButton.trailingAnchor, constant: 8),
             progress.centerYAnchor.constraint(equalTo: onboardingAddButton.centerYAnchor),
             messageLabel.topAnchor.constraint(equalTo: onboardingAddButton.bottomAnchor, constant: 10),
-            messageLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 32),
-            messageLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -32)
+            messageLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            messageLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 420)
         ])
     }
 
@@ -232,22 +192,21 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         let header = makeHeader()
         let sidebar = makeSidebar()
         let content = makeMainContent()
-        let columnLine = HairlineView()
+        let columnLine = NSBox()
+        columnLine.boxType = .separator
         [header, sidebar, content, columnLine].forEach {
             view.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
-        let headerHeight = header.heightAnchor.constraint(equalToConstant: Design.headerHeight)
-        headerHeightConstraint = headerHeight
         NSLayoutConstraint.activate([
-            headerHeight,
             header.topAnchor.constraint(equalTo: view.topAnchor),
             header.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: 36),
             sidebar.topAnchor.constraint(equalTo: header.bottomAnchor),
             sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            sidebar.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.44),
+            sidebar.widthAnchor.constraint(equalToConstant: 248),
             columnLine.topAnchor.constraint(equalTo: header.bottomAnchor),
             columnLine.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             columnLine.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
@@ -267,44 +226,53 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     private func makeHeader() -> NSView {
         let container = NSView()
-        searchPill.placeholder = AppLanguage.text(russian: "Поиск стран или городов...", english: "Search countries or cities...")
-        searchPill.text = searchQuery
-        searchPill.onChange = { [weak self] text in self?.applySearch(text) }
-        languagePill.title = AppLanguage.current == .russian ? "Русский" : "English"
-        languagePill.onClick = { [weak self] in self?.showLanguageMenu() }
+        searchField.placeholderString = AppLanguage.text(russian: "Поиск стран или городов...", english: "Search countries or cities...")
+        searchField.stringValue = searchQuery
+        searchField.target = self
+        searchField.action = #selector(searchChanged(_:))
+        searchField.sendsSearchStringImmediately = true
+        searchField.controlSize = .small
+        configureLanguagePopup()
         addSubscriptionButton.title = AppLanguage.text(russian: "Добавить подписку", english: "Add subscription")
-        addSubscriptionButton.onClick = { [weak self] in self?.showAddSubscriptionDialog() }
+        addSubscriptionButton.bezelStyle = .rounded
+        addSubscriptionButton.controlSize = .small
+        addSubscriptionButton.target = self
+        addSubscriptionButton.action = #selector(showAddSubscriptionDialog)
         progress.style = .spinning
         progress.controlSize = .small
         progress.isDisplayedWhenStopped = false
-        let divider = HairlineView()
-        [searchPill, progress, languagePill, addSubscriptionButton, divider].forEach {
+        let divider = NSBox()
+        divider.boxType = .separator
+        [searchField, progress, languagePopup, addSubscriptionButton, divider].forEach {
             container.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
         NSLayoutConstraint.activate([
-            searchPill.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 86),
-            searchPill.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            searchPill.heightAnchor.constraint(equalToConstant: 36),
-            progress.leadingAnchor.constraint(equalTo: searchPill.trailingAnchor, constant: 8),
+            searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            searchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            searchField.widthAnchor.constraint(equalToConstant: 200),
+            progress.leadingAnchor.constraint(equalTo: searchField.trailingAnchor, constant: 6),
             progress.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            progress.widthAnchor.constraint(equalToConstant: 16),
-            progress.heightAnchor.constraint(equalToConstant: 16),
-            languagePill.leadingAnchor.constraint(equalTo: progress.trailingAnchor, constant: 8),
-            languagePill.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            languagePill.widthAnchor.constraint(equalToConstant: 136),
-            languagePill.heightAnchor.constraint(equalToConstant: 36),
-            addSubscriptionButton.leadingAnchor.constraint(equalTo: languagePill.trailingAnchor, constant: 12),
-            addSubscriptionButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18),
+            languagePopup.trailingAnchor.constraint(equalTo: addSubscriptionButton.leadingAnchor, constant: -8),
+            languagePopup.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            languagePopup.widthAnchor.constraint(equalToConstant: 110),
+            addSubscriptionButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
             addSubscriptionButton.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            addSubscriptionButton.widthAnchor.constraint(equalToConstant: 200),
-            addSubscriptionButton.heightAnchor.constraint(equalToConstant: 36),
             divider.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             divider.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             divider.heightAnchor.constraint(equalToConstant: 1)
         ])
         return container
+    }
+
+    private func configureLanguagePopup() {
+        languagePopup.removeAllItems()
+        languagePopup.addItems(withTitles: ["Русский", "English"])
+        languagePopup.selectItem(at: AppLanguage.current == .russian ? 0 : 1)
+        languagePopup.target = self
+        languagePopup.action = #selector(languageChanged(_:))
+        languagePopup.controlSize = .small
     }
 
     private func makeSidebar() -> NSView {
@@ -319,10 +287,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         }
         column.resizingMask = .autoresizingMask
         outlineView.headerView = nil
-        outlineView.backgroundColor = Design.background
-        outlineView.selectionHighlightStyle = .none
-        outlineView.indentationPerLevel = 14
-        outlineView.intercellSpacing = NSSize(width: 0, height: 1)
+        outlineView.selectionHighlightStyle = .regular
+        outlineView.indentationPerLevel = 12
         outlineView.focusRingType = .none
         outlineView.dataSource = self
         outlineView.delegate = self
@@ -338,10 +304,10 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         container.addSubview(scroll)
         scroll.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
-            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
-            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
-            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
+            scroll.topAnchor.constraint(equalTo: container.topAnchor),
+            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
         return container
     }
@@ -360,146 +326,108 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     private func makeMainContent() -> NSView {
         let container = NSView()
-        let map = WorldMapView()
-        let serverCard = SoftCard()
-        let protocolCard = SoftCard()
         let toggles = makeToggleRow()
+        let topLine = NSBox()
+        topLine.boxType = .separator
 
-        selectedFlagLabel.font = NSFont.systemFont(ofSize: 26)
+        selectedFlagLabel.font = NSFont.systemFont(ofSize: 18)
         selectedFlagLabel.alignment = .center
-        selectedNameLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        selectedNameLabel.textColor = Design.primaryText
+        selectedNameLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         selectedNameLabel.lineBreakMode = .byTruncatingTail
         selectedNameLabel.maximumNumberOfLines = 1
-        selectedDetailsLabel.font = NSFont.systemFont(ofSize: 12)
-        selectedDetailsLabel.textColor = Design.secondaryText
+        selectedDetailsLabel.font = NSFont.systemFont(ofSize: 11)
+        selectedDetailsLabel.textColor = .secondaryLabelColor
         selectedDetailsLabel.lineBreakMode = .byTruncatingTail
         selectedDetailsLabel.maximumNumberOfLines = 1
         selectedLatencyLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        selectedLatencyLabel.textColor = Design.secondaryText
+        selectedLatencyLabel.textColor = .secondaryLabelColor
         selectedLatencyLabel.alignment = .right
-        protocolValueLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        protocolValueLabel.textColor = Design.primaryText
-        let protocolBadge = ProtocolBadge()
+        protocolValueLabel.font = NSFont.systemFont(ofSize: 13)
         let protocolCaption = NSTextField(labelWithString: AppLanguage.text(russian: "Протокол", english: "Protocol"))
         protocolCaption.font = NSFont.systemFont(ofSize: 11)
-        protocolCaption.textColor = Design.secondaryText
-        let serverChevron = chevronLabel()
-        let protocolChevron = chevronLabel()
-
-        [selectedFlagLabel, selectedNameLabel, selectedDetailsLabel, selectedDot, selectedLatencyLabel, serverChevron].forEach {
-            serverCard.addSubview($0)
-            $0.translatesAutoresizingMaskIntoConstraints = false
-        }
-        [protocolBadge, protocolCaption, protocolValueLabel, protocolChevron].forEach {
-            protocolCard.addSubview($0)
-            $0.translatesAutoresizingMaskIntoConstraints = false
-        }
+        protocolCaption.textColor = .secondaryLabelColor
 
         connectButton.target = self
         connectButton.action = #selector(toggleConnection)
-        statusLabel.font = NSFont.systemFont(ofSize: 24, weight: .bold)
-        statusLabel.textColor = Design.primaryText
+        statusLabel.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
         statusLabel.alignment = .center
-        connectionSubtitleLabel.font = NSFont.systemFont(ofSize: 13)
-        connectionSubtitleLabel.textColor = Design.secondaryText
+        connectionSubtitleLabel.font = NSFont.systemFont(ofSize: 12)
+        connectionSubtitleLabel.textColor = .secondaryLabelColor
         connectionSubtitleLabel.alignment = .center
-        messageLabel.font = NSFont.systemFont(ofSize: 12)
+        messageLabel.font = NSFont.systemFont(ofSize: 11)
+        messageLabel.textColor = .secondaryLabelColor
         messageLabel.alignment = .center
         messageLabel.maximumNumberOfLines = 2
-        messageLabel.preferredMaxLayoutWidth = 460
+        messageLabel.preferredMaxLayoutWidth = 360
 
-        [map, connectButton, statusLabel, connectionSubtitleLabel, messageLabel, serverCard, protocolCard, toggles].forEach {
+        [connectButton, statusLabel, connectionSubtitleLabel, messageLabel, topLine, selectedFlagLabel, selectedNameLabel, selectedDetailsLabel, selectedDot, selectedLatencyLabel, protocolCaption, protocolValueLabel, toggles].forEach {
             container.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
+        let messageGap = messageLabel.bottomAnchor.constraint(lessThanOrEqualTo: selectedFlagLabel.topAnchor, constant: -8)
+        messageGap.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            map.topAnchor.constraint(equalTo: container.topAnchor),
-            map.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            map.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            map.heightAnchor.constraint(equalToConstant: 300),
             connectButton.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            connectButton.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            connectButton.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             connectButton.widthAnchor.constraint(equalToConstant: 200),
             connectButton.heightAnchor.constraint(equalToConstant: 200),
             statusLabel.topAnchor.constraint(equalTo: connectButton.bottomAnchor, constant: 2),
+            messageGap,
             statusLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            connectionSubtitleLabel.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 4),
+            connectionSubtitleLabel.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 2),
             connectionSubtitleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            messageLabel.topAnchor.constraint(equalTo: connectionSubtitleLabel.bottomAnchor, constant: 6),
-            messageLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 36),
-            messageLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -36),
-            toggles.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
-            toggles.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
-            toggles.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -18),
-            toggles.heightAnchor.constraint(equalToConstant: 64),
-            protocolCard.leadingAnchor.constraint(equalTo: toggles.leadingAnchor),
-            protocolCard.trailingAnchor.constraint(equalTo: toggles.trailingAnchor),
-            protocolCard.bottomAnchor.constraint(equalTo: toggles.topAnchor, constant: -14),
-            protocolCard.heightAnchor.constraint(equalToConstant: 64),
-            serverCard.leadingAnchor.constraint(equalTo: protocolCard.leadingAnchor),
-            serverCard.trailingAnchor.constraint(equalTo: protocolCard.trailingAnchor),
-            serverCard.bottomAnchor.constraint(equalTo: protocolCard.topAnchor, constant: -10),
-            serverCard.heightAnchor.constraint(equalToConstant: 64),
-            selectedFlagLabel.leadingAnchor.constraint(equalTo: serverCard.leadingAnchor, constant: 16),
-            selectedFlagLabel.centerYAnchor.constraint(equalTo: serverCard.centerYAnchor),
-            selectedFlagLabel.widthAnchor.constraint(equalToConstant: 36),
-            selectedNameLabel.leadingAnchor.constraint(equalTo: selectedFlagLabel.trailingAnchor, constant: 10),
-            selectedNameLabel.topAnchor.constraint(equalTo: serverCard.topAnchor, constant: 12),
+            messageLabel.topAnchor.constraint(equalTo: connectionSubtitleLabel.bottomAnchor, constant: 4),
+            messageLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            messageLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+            toggles.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            toggles.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            toggles.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
+            toggles.heightAnchor.constraint(equalToConstant: 36),
+            protocolCaption.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            protocolCaption.bottomAnchor.constraint(equalTo: toggles.topAnchor, constant: -10),
+            protocolValueLabel.leadingAnchor.constraint(equalTo: protocolCaption.trailingAnchor, constant: 8),
+            protocolValueLabel.centerYAnchor.constraint(equalTo: protocolCaption.centerYAnchor),
+            protocolValueLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20),
+            topLine.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            topLine.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            topLine.bottomAnchor.constraint(equalTo: protocolCaption.topAnchor, constant: -8),
+            topLine.heightAnchor.constraint(equalToConstant: 1),
+            selectedFlagLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 18),
+            selectedFlagLabel.bottomAnchor.constraint(equalTo: topLine.topAnchor, constant: -8),
+            selectedFlagLabel.widthAnchor.constraint(equalToConstant: 28),
+            selectedNameLabel.leadingAnchor.constraint(equalTo: selectedFlagLabel.trailingAnchor, constant: 8),
+            selectedNameLabel.bottomAnchor.constraint(equalTo: selectedFlagLabel.centerYAnchor, constant: -1),
             selectedNameLabel.trailingAnchor.constraint(lessThanOrEqualTo: selectedDot.leadingAnchor, constant: -8),
             selectedDetailsLabel.leadingAnchor.constraint(equalTo: selectedNameLabel.leadingAnchor),
-            selectedDetailsLabel.topAnchor.constraint(equalTo: selectedNameLabel.bottomAnchor, constant: 2),
+            selectedDetailsLabel.topAnchor.constraint(equalTo: selectedNameLabel.bottomAnchor, constant: 1),
             selectedDetailsLabel.trailingAnchor.constraint(lessThanOrEqualTo: selectedDot.leadingAnchor, constant: -8),
-            selectedDot.trailingAnchor.constraint(equalTo: selectedLatencyLabel.leadingAnchor, constant: -6),
-            selectedDot.centerYAnchor.constraint(equalTo: serverCard.centerYAnchor),
+            selectedDot.trailingAnchor.constraint(equalTo: selectedLatencyLabel.leadingAnchor, constant: -5),
+            selectedDot.centerYAnchor.constraint(equalTo: selectedFlagLabel.centerYAnchor),
             selectedDot.widthAnchor.constraint(equalToConstant: 7),
             selectedDot.heightAnchor.constraint(equalToConstant: 7),
-            selectedLatencyLabel.trailingAnchor.constraint(equalTo: serverChevron.leadingAnchor, constant: -8),
-            selectedLatencyLabel.centerYAnchor.constraint(equalTo: serverCard.centerYAnchor),
-            serverChevron.trailingAnchor.constraint(equalTo: serverCard.trailingAnchor, constant: -16),
-            serverChevron.centerYAnchor.constraint(equalTo: serverCard.centerYAnchor),
-            protocolBadge.leadingAnchor.constraint(equalTo: protocolCard.leadingAnchor, constant: 16),
-            protocolBadge.centerYAnchor.constraint(equalTo: protocolCard.centerYAnchor),
-            protocolBadge.widthAnchor.constraint(equalToConstant: 36),
-            protocolBadge.heightAnchor.constraint(equalToConstant: 36),
-            protocolCaption.leadingAnchor.constraint(equalTo: protocolBadge.trailingAnchor, constant: 12),
-            protocolCaption.topAnchor.constraint(equalTo: protocolCard.topAnchor, constant: 12),
-            protocolValueLabel.leadingAnchor.constraint(equalTo: protocolCaption.leadingAnchor),
-            protocolValueLabel.topAnchor.constraint(equalTo: protocolCaption.bottomAnchor, constant: 2),
-            protocolValueLabel.trailingAnchor.constraint(lessThanOrEqualTo: protocolChevron.leadingAnchor, constant: -8),
-            protocolChevron.trailingAnchor.constraint(equalTo: protocolCard.trailingAnchor, constant: -16),
-            protocolChevron.centerYAnchor.constraint(equalTo: protocolCard.centerYAnchor)
+            selectedLatencyLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18),
+            selectedLatencyLabel.centerYAnchor.constraint(equalTo: selectedFlagLabel.centerYAnchor)
         ])
         return container
     }
 
     private func makeToggleRow() -> NSView {
         let row = NSView()
-        autoSwitch.isOn = defaults.bool(forKey: autoConnectKey)
-        autoSwitch.onChange = { [weak self] isOn in
-            guard let self = self else { return }
-            self.defaults.set(isOn, forKey: self.autoConnectKey)
-        }
-        invisibleSwitch.isOn = defaults.bool(forKey: invisibleModeKey)
-        invisibleSwitch.onChange = { [weak self] isOn in
-            guard let self = self else { return }
-            self.defaults.set(isOn, forKey: self.invisibleModeKey)
-            self.applyInvisibleMode()
-        }
-        let left = toggleColumn(
-            icon: Design.shield,
+        autoSwitch.state = defaults.bool(forKey: autoConnectKey) ? .on : .off
+        autoSwitch.target = self
+        autoSwitch.action = #selector(autoConnectChanged(_:))
+        invisibleSwitch.state = defaults.bool(forKey: invisibleModeKey) ? .on : .off
+        invisibleSwitch.target = self
+        invisibleSwitch.action = #selector(invisibleModeChanged(_:))
+        let left = switchColumn(
             title: AppLanguage.text(russian: "Автоподключение", english: "Auto-connect"),
-            detail: AppLanguage.text(russian: "При запуске приложения", english: "Connect on app launch"),
             toggle: autoSwitch
         )
-        let right = toggleColumn(
-            icon: Design.hiddenEye,
+        let right = switchColumn(
             title: AppLanguage.text(russian: "Скрыть в Dock", english: "Hide from Dock"),
-            detail: AppLanguage.text(russian: "Не показывать значок приложения", english: "Hide the application icon"),
             toggle: invisibleSwitch
         )
-        let divider = HairlineView()
-        [left, right, divider].forEach {
+        [left, right].forEach {
             row.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
@@ -507,65 +435,34 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             left.leadingAnchor.constraint(equalTo: row.leadingAnchor),
             left.topAnchor.constraint(equalTo: row.topAnchor),
             left.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-            right.leadingAnchor.constraint(equalTo: left.trailingAnchor),
+            right.leadingAnchor.constraint(equalTo: left.trailingAnchor, constant: 12),
             right.trailingAnchor.constraint(equalTo: row.trailingAnchor),
             right.topAnchor.constraint(equalTo: row.topAnchor),
             right.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-            right.widthAnchor.constraint(equalTo: left.widthAnchor),
-            divider.centerXAnchor.constraint(equalTo: row.centerXAnchor),
-            divider.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            divider.widthAnchor.constraint(equalToConstant: 1),
-            divider.heightAnchor.constraint(equalToConstant: 28)
+            right.widthAnchor.constraint(equalTo: left.widthAnchor)
         ])
         return row
     }
 
-    private func toggleColumn(icon: NSImage, title: String, detail: String, toggle: TinySwitch) -> NSView {
+    private func switchColumn(title: String, toggle: NSSwitch) -> NSView {
         let column = NSView()
-        let imageView = NSImageView()
-        imageView.image = icon
-        imageView.imageScaling = .scaleProportionallyDown
-        imageView.contentTintColor = Design.secondaryText
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        titleLabel.textColor = Design.primaryText
+        titleLabel.font = NSFont.systemFont(ofSize: 12)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
-        let detailLabel = NSTextField(labelWithString: detail)
-        detailLabel.font = NSFont.systemFont(ofSize: 11)
-        detailLabel.textColor = Design.secondaryText
-        detailLabel.lineBreakMode = .byTruncatingTail
-        detailLabel.maximumNumberOfLines = 1
-        [imageView, titleLabel, detailLabel, toggle].forEach {
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        [titleLabel, toggle].forEach {
             column.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
-        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        detailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         NSLayoutConstraint.activate([
-            imageView.leadingAnchor.constraint(equalTo: column.leadingAnchor, constant: 16),
-            imageView.centerYAnchor.constraint(equalTo: column.centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: 16),
-            imageView.heightAnchor.constraint(equalToConstant: 16),
-            titleLabel.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 10),
-            titleLabel.topAnchor.constraint(equalTo: column.topAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
-            detailLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            detailLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
-            detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
-            toggle.trailingAnchor.constraint(equalTo: column.trailingAnchor, constant: -8),
+            toggle.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             toggle.centerYAnchor.constraint(equalTo: column.centerYAnchor),
-            toggle.widthAnchor.constraint(equalToConstant: 42),
-            toggle.heightAnchor.constraint(equalToConstant: 26)
+            titleLabel.leadingAnchor.constraint(equalTo: toggle.trailingAnchor, constant: 6),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: column.centerYAnchor)
         ])
         return column
-    }
-
-    private func chevronLabel() -> NSTextField {
-        let label = NSTextField(labelWithString: "›")
-        label.font = NSFont.systemFont(ofSize: 18, weight: .light)
-        label.textColor = Design.tertiaryText
-        return label
     }
 
     private func applySearch(_ raw: String) {
@@ -587,17 +484,22 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         }
     }
 
-    private func showLanguageMenu() {
-        let menu = NSMenu()
-        let russian = menu.addItem(withTitle: "Русский", action: #selector(pickRussian), keyEquivalent: "")
-        russian.target = self
-        let english = menu.addItem(withTitle: "English", action: #selector(pickEnglish), keyEquivalent: "")
-        english.target = self
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: languagePill)
+    @objc private func searchChanged(_ sender: NSSearchField) {
+        applySearch(sender.stringValue)
     }
 
-    @objc private func pickRussian() { setLanguage(.russian) }
-    @objc private func pickEnglish() { setLanguage(.english) }
+    @objc private func languageChanged(_ sender: NSPopUpButton) {
+        setLanguage(sender.indexOfSelectedItem == 0 ? .russian : .english)
+    }
+
+    @objc private func autoConnectChanged(_ sender: NSSwitch) {
+        defaults.set(sender.state == .on, forKey: autoConnectKey)
+    }
+
+    @objc private func invisibleModeChanged(_ sender: NSSwitch) {
+        defaults.set(sender.state == .on, forKey: invisibleModeKey)
+        applyInvisibleMode()
+    }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard control === onboardingURLField, commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
@@ -731,7 +633,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             connectButton.connectionStyle = .idle
             connectButton.isEnabled = selectedProfile != nil && !subscriptionRequestInProgress && !latencyTestInProgress
             outlineView.isEnabled = !subscriptionRequestInProgress
-            searchPill.isEnabled = !subscriptionRequestInProgress
+            searchField.isEnabled = !subscriptionRequestInProgress
             addSubscriptionButton.isEnabled = !subscriptionRequestInProgress
         case .connecting:
             statusLabel.stringValue = L10n.text(.connecting)
@@ -766,7 +668,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     private func setMainControlsEnabled(_ enabled: Bool) {
         outlineView.isEnabled = enabled
-        searchPill.isEnabled = enabled
+        searchField.isEnabled = enabled
         addSubscriptionButton.isEnabled = enabled
     }
 
@@ -809,7 +711,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             selectedNameLabel.stringValue = L10n.text(.addSubscription)
             selectedDetailsLabel.stringValue = L10n.text(.serversWillAppear)
             selectedLatencyLabel.stringValue = "—"
-            selectedDot.color = Design.tertiaryText
+            selectedDot.color = .tertiaryLabelColor
             protocolValueLabel.stringValue = "—"
             connectButton.isEnabled = false
             connectButton.alphaValue = 0.5
@@ -826,7 +728,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             selectedDot.color = latencyDotColor(latency)
         } else {
             selectedLatencyLabel.stringValue = "—"
-            selectedDot.color = Design.tertiaryText
+            selectedDot.color = .tertiaryLabelColor
         }
         let idle = vpnController.state == .disconnected || vpnController.state == .connected
         connectButton.isEnabled = idle && !latencyTestInProgress
@@ -836,13 +738,6 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private func protocolLabel(_ profile: VPNProfile) -> String {
         let network = (profile.parameters["type"] ?? profile.parameters["net"] ?? (profile.kind == .hysteria2 ? "udp" : "tcp")).uppercased()
         return "\(profile.kind.title) (\(network))"
-    }
-
-    private func crownImage(for name: String) -> NSImage? {
-        let folded = name.lowercased()
-        if folded.contains("premium") || folded.contains("премиум") || folded.contains("vip") { return Design.purpleCrown }
-        if folded.contains("plus") || folded.contains("плюс") { return Design.goldCrown }
-        return nil
     }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -856,14 +751,14 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool { item is SubscriptionEntry }
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool { item is ProfileNode }
-    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat { item is SubscriptionEntry ? 38 : 52 }
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat { item is SubscriptionEntry ? 26 : 40 }
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         if let subscription = item as? SubscriptionEntry {
             let identifier = NSUserInterfaceItemIdentifier("SubscriptionCell")
             let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? GroupCell) ?? GroupCell(identifier: identifier)
             let nodes = subscription.filteredNodes(matching: searchQuery)
-            cell.update(name: subscription.name, count: nodes.count, crown: crownImage(for: subscription.name))
+            cell.update(name: subscription.name, count: nodes.count)
             return cell
         }
         guard let node = item as? ProfileNode else { return nil }
@@ -871,13 +766,6 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? ProfileCell) ?? ProfileCell(identifier: identifier)
         cell.update(profile: node.profile, latency: latencyByProfileID[node.profile.id], selected: node === selectedNode)
         return cell
-    }
-
-    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
-        let identifier = NSUserInterfaceItemIdentifier("ServerRow")
-        let row = (outlineView.makeView(withIdentifier: identifier, owner: self) as? ServerRowView) ?? ServerRowView()
-        row.identifier = identifier
-        return row
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -992,7 +880,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             return (node, milliseconds)
         }.min { $0.1 < $1.1 }
         guard let result = fastest else {
-            showStatus(L10n.text(.pingUnavailable), color: Design.danger)
+            showStatus(L10n.text(.pingUnavailable), color: .systemRed)
             return
         }
         select(node: result.0)
@@ -1015,8 +903,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     private func latencyDotColor(_ latency: LatencyState) -> NSColor {
         switch latency {
-        case .testing, .unavailable: return Design.tertiaryText
-        case .reachable: return Design.latency
+        case .testing, .unavailable: return .tertiaryLabelColor
+        case .reachable: return .systemGreen
         }
     }
 
@@ -1061,13 +949,13 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         defaults.removeObject(forKey: "subscriptionURL")
     }
 
-    private func showStatus(_ text: String, color: NSColor = Design.secondaryText) {
+    private func showStatus(_ text: String, color: NSColor = .secondaryLabelColor) {
         messageLabel.textColor = color
         messageLabel.stringValue = text
     }
 
     private func showError(_ error: Error) {
-        showStatus(error.localizedDescription, color: Design.danger)
+        showStatus(error.localizedDescription, color: .systemRed)
         NSSound.beep()
     }
 }
@@ -1090,256 +978,8 @@ private extension SubscriptionEntry {
     }
 }
 
-private final class FlatView: NSView {
-    override var isOpaque: Bool { true }
-    override func draw(_ dirtyRect: NSRect) {
-        Design.background.setFill()
-        bounds.fill()
-    }
-}
-
-private final class HairlineView: NSView {
-    override var isOpaque: Bool { false }
-    override func draw(_ dirtyRect: NSRect) {
-        Design.hairline.setFill()
-        bounds.fill()
-    }
-}
-
-private final class SoftCard: NSView {
-    override var isOpaque: Bool { false }
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
-        Design.surface.setFill()
-        let path = NSBezierPath(roundedRect: rect, xRadius: 16, yRadius: 16)
-        path.fill()
-        Design.cardBorder.setStroke()
-        path.lineWidth = 1
-        path.stroke()
-    }
-}
-
-private final class FieldChrome: NSView {
-    override var isOpaque: Bool { false }
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
-        Design.surface.setFill()
-        let path = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
-        path.fill()
-        Design.cardBorder.setStroke()
-        path.lineWidth = 1
-        path.stroke()
-    }
-}
-
-private final class SearchPill: NSView, HeaderControl, NSTextFieldDelegate {
-    var onChange: ((String) -> Void)?
-    var isEnabled: Bool = true {
-        didSet {
-            field.isEnabled = isEnabled
-            alphaValue = isEnabled ? 1 : 0.48
-        }
-    }
-    var text: String {
-        get { field.stringValue }
-        set { field.stringValue = newValue }
-    }
-    var placeholder: String = "" {
-        didSet { applyPlaceholder() }
-    }
-    private let field = NSTextField()
-    private var focused = false
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        field.isBordered = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.font = NSFont.systemFont(ofSize: 13)
-        field.textColor = Design.primaryText
-        field.delegate = self
-        field.cell?.sendsActionOnEndEditing = false
-        addSubview(field)
-        field.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 32),
-            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            field.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
-        Design.surface.setFill()
-        let path = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
-        path.fill()
-        (focused ? Design.accent : Design.cardBorder).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-        Design.secondaryText.setStroke()
-        let glass = NSBezierPath(ovalIn: NSRect(x: 13, y: bounds.midY - 5, width: 9, height: 9))
-        glass.lineWidth = 1.4
-        glass.stroke()
-        let handle = NSBezierPath()
-        handle.move(to: NSPoint(x: 20.5, y: bounds.midY - 3.2))
-        handle.line(to: NSPoint(x: 24, y: bounds.midY - 6.6))
-        handle.lineWidth = 1.4
-        handle.lineCapStyle = .round
-        handle.stroke()
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(field)
-    }
-
-    func controlTextDidChange(_ obj: Notification) { onChange?(field.stringValue) }
-    func controlTextDidBeginEditing(_ obj: Notification) { focused = true; needsDisplay = true }
-    func controlTextDidEndEditing(_ obj: Notification) { focused = false; needsDisplay = true }
-
-    private func applyPlaceholder() {
-        field.placeholderAttributedString = NSAttributedString(
-            string: placeholder,
-            attributes: [
-                .foregroundColor: Design.secondaryText,
-                .font: NSFont.systemFont(ofSize: 13)
-            ]
-        )
-    }
-}
-
-private final class AccentPill: NSView, HeaderControl {
-    var onClick: (() -> Void)?
-    var isEnabled: Bool = true { didSet { alphaValue = isEnabled ? 1 : 0.45 } }
-    var title: String = "" { didSet { label.stringValue = title } }
-    private let label = NSTextField(labelWithString: "")
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        let imageView = NSImageView()
-        imageView.image = Design.whiteCrown
-        imageView.imageScaling = .scaleProportionallyDown
-        label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .white
-        label.lineBreakMode = .byTruncatingTail
-        let stack = NSView()
-        [imageView, label, stack].forEach {
-            if $0 !== stack { stack.addSubview($0) }
-            $0.translatesAutoresizingMaskIntoConstraints = false
-        }
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            imageView.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            imageView.centerYAnchor.constraint(equalTo: stack.centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: 14),
-            imageView.heightAnchor.constraint(equalToConstant: 14),
-            label.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
-            label.centerYAnchor.constraint(equalTo: stack.centerYAnchor),
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stack.topAnchor.constraint(equalTo: imageView.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: imageView.bottomAnchor)
-        ])
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        Design.accent.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(convert(point, from: superview)) ? self : nil
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        guard isEnabled else { return }
-        onClick?()
-    }
-}
-
-private final class LanguagePill: NSView, HeaderControl {
-    var onClick: (() -> Void)?
-    var title: String = "" { didSet { label.stringValue = title } }
-    private let label = NSTextField(labelWithString: "")
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        let imageView = NSImageView()
-        imageView.image = Design.globe
-        imageView.imageScaling = .scaleProportionallyDown
-        imageView.contentTintColor = Design.secondaryText
-        label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        label.textColor = Design.primaryText
-        let chevron = NSTextField(labelWithString: "▾")
-        chevron.font = NSFont.systemFont(ofSize: 9, weight: .semibold)
-        chevron.textColor = Design.secondaryText
-        let stack = NSView()
-        [imageView, label, chevron].forEach {
-            stack.addSubview($0)
-            $0.translatesAutoresizingMaskIntoConstraints = false
-        }
-        addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            imageView.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            imageView.centerYAnchor.constraint(equalTo: stack.centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: 14),
-            imageView.heightAnchor.constraint(equalToConstant: 14),
-            label.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
-            label.centerYAnchor.constraint(equalTo: stack.centerYAnchor),
-            chevron.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 5),
-            chevron.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
-            chevron.centerYAnchor.constraint(equalTo: stack.centerYAnchor),
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
-        Design.surface.setFill()
-        let path = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
-        path.fill()
-        Design.cardBorder.setStroke()
-        path.lineWidth = 1
-        path.stroke()
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(convert(point, from: superview)) ? self : nil
-    }
-
-    override func mouseDown(with event: NSEvent) { onClick?() }
-}
-
-private final class TinySwitch: NSView {
-    var isOn = false { didSet { needsDisplay = true } }
-    var onChange: ((Bool) -> Void)?
-
-    override func mouseDown(with event: NSEvent) {
-        isOn.toggle()
-        onChange?(isOn)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let track = bounds.insetBy(dx: 1, dy: 3)
-        (isOn ? Design.accent : Design.switchOff).setFill()
-        NSBezierPath(roundedRect: track, xRadius: track.height / 2, yRadius: track.height / 2).fill()
-        let knobSize = track.height - 4
-        let x = isOn ? track.maxX - knobSize - 2 : track.minX + 2
-        NSColor.white.setFill()
-        NSBezierPath(ovalIn: NSRect(x: x, y: track.minY + 2, width: knobSize, height: knobSize)).fill()
-    }
-}
-
 private final class DotView: NSView {
-    var color: NSColor = Design.tertiaryText { didSet { needsDisplay = true } }
+    var color: NSColor = .tertiaryLabelColor { didSet { needsDisplay = true } }
     override var isOpaque: Bool { false }
     override func draw(_ dirtyRect: NSRect) {
         color.setFill()
@@ -1347,115 +987,47 @@ private final class DotView: NSView {
     }
 }
 
-private final class ProtocolBadge: NSView {
-    override var isOpaque: Bool { false }
-    override func draw(_ dirtyRect: NSRect) {
-        Design.accent.withAlphaComponent(0.10).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12).fill()
-        let points = [
-            NSPoint(x: bounds.midX, y: bounds.midY + 7),
-            NSPoint(x: bounds.midX - 7, y: bounds.midY - 5),
-            NSPoint(x: bounds.midX + 7, y: bounds.midY - 5)
-        ]
-        let lines = NSBezierPath()
-        lines.move(to: points[0])
-        lines.line(to: points[1])
-        lines.line(to: points[2])
-        lines.line(to: points[0])
-        lines.lineWidth = 1.35
-        Design.accent.setStroke()
-        lines.stroke()
-        Design.accent.setFill()
-        for point in points {
-            NSBezierPath(ovalIn: NSRect(x: point.x - 3.1, y: point.y - 3.1, width: 6.2, height: 6.2)).fill()
-        }
-    }
-}
-
-private final class CountBadge: NSView {
-    private let label = NSTextField(labelWithString: "")
-    private var widthConstraint: NSLayoutConstraint!
-
-    var text: String = "" { didSet { apply() } }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        label.textColor = Design.secondaryText
-        label.alignment = .center
-        widthConstraint = widthAnchor.constraint(equalToConstant: 20)
-        addSubview(label)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            widthConstraint,
-            heightAnchor.constraint(equalToConstant: 18),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    override var isOpaque: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        Design.badgeFill.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
-    }
-
-    private func apply() {
-        label.stringValue = text
-        let size = (text as NSString).size(withAttributes: [.font: label.font as Any])
-        widthConstraint.constant = max(20, ceil(size.width) + 12)
-        needsDisplay = true
-    }
-}
-
 private final class GroupCell: NSTableCellView {
     private let nameLabel = NSTextField(labelWithString: "")
-    private let crownView = NSImageView()
-    private let badge = CountBadge()
-    private var crownWidth: NSLayoutConstraint!
-    private var nameGap: NSLayoutConstraint!
+    private let countLabel = NSTextField(labelWithString: "")
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
         self.identifier = identifier
-        nameLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        nameLabel.textColor = Design.primaryText
+        nameLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.maximumNumberOfLines = 1
-        crownView.imageScaling = .scaleProportionallyDown
+        countLabel.font = NSFont.systemFont(ofSize: 12)
+        countLabel.textColor = .secondaryLabelColor
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        [nameLabel, crownView, badge].forEach {
+        [nameLabel, countLabel].forEach {
             addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
-        crownWidth = crownView.widthAnchor.constraint(equalToConstant: 0)
-        nameGap = crownView.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor)
         NSLayoutConstraint.activate([
-            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            nameGap,
-            crownView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            crownWidth,
-            crownView.heightAnchor.constraint(equalToConstant: 14),
-            badge.leadingAnchor.constraint(equalTo: crownView.trailingAnchor, constant: 6),
-            badge.centerYAnchor.constraint(equalTo: centerYAnchor),
-            badge.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8)
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -8),
+            countLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
 
     required init?(coder: NSCoder) { return nil }
 
-    func update(name: String, count: Int, crown: NSImage?) {
+    func update(name: String, count: Int) {
         nameLabel.stringValue = name
-        badge.text = "\(count)"
-        crownView.image = crown
-        crownView.isHidden = crown == nil
-        crownWidth.constant = crown == nil ? 0 : 14
-        nameGap.constant = crown == nil ? 0 : 6
+        countLabel.stringValue = "\(count)"
+    }
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { applyColors() }
+    }
+
+    private func applyColors() {
+        let selected = backgroundStyle == .emphasized
+        nameLabel.textColor = selected ? .alternateSelectedControlTextColor : .labelColor
+        countLabel.textColor = selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
     }
 }
 
@@ -1463,53 +1035,42 @@ private final class ProfileCell: NSTableCellView {
     private let flagLabel = NSTextField(labelWithString: "")
     private let titleLabel = NSTextField(labelWithString: "")
     private let cityLabel = NSTextField(labelWithString: "")
-    private let dot = DotView()
     private let latencyLabel = NSTextField(labelWithString: "")
-    private let starLabel = NSTextField(labelWithString: "☆")
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
         self.identifier = identifier
-        flagLabel.font = NSFont.systemFont(ofSize: 20)
+        flagLabel.font = NSFont.systemFont(ofSize: 16)
         flagLabel.alignment = .center
-        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = Design.primaryText
+        titleLabel.font = NSFont.systemFont(ofSize: 13)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         cityLabel.font = NSFont.systemFont(ofSize: 11)
-        cityLabel.textColor = Design.secondaryText
+        cityLabel.textColor = .secondaryLabelColor
         cityLabel.lineBreakMode = .byTruncatingTail
         cityLabel.maximumNumberOfLines = 1
         latencyLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        latencyLabel.textColor = Design.secondaryText
+        latencyLabel.textColor = .secondaryLabelColor
         latencyLabel.alignment = .right
-        starLabel.font = NSFont.systemFont(ofSize: 15)
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         cityLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         latencyLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        [flagLabel, titleLabel, cityLabel, dot, latencyLabel, starLabel].forEach {
+        [flagLabel, titleLabel, cityLabel, latencyLabel].forEach {
             addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
         NSLayoutConstraint.activate([
-            flagLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            flagLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             flagLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            flagLabel.widthAnchor.constraint(equalToConstant: 32),
-            titleLabel.leadingAnchor.constraint(equalTo: flagLabel.trailingAnchor, constant: 8),
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: dot.leadingAnchor, constant: -8),
+            flagLabel.widthAnchor.constraint(equalToConstant: 24),
+            titleLabel.leadingAnchor.constraint(equalTo: flagLabel.trailingAnchor, constant: 6),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: latencyLabel.leadingAnchor, constant: -8),
             cityLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            cityLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
-            cityLabel.trailingAnchor.constraint(lessThanOrEqualTo: dot.leadingAnchor, constant: -8),
-            starLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            starLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            starLabel.widthAnchor.constraint(equalToConstant: 16),
-            latencyLabel.trailingAnchor.constraint(equalTo: starLabel.leadingAnchor, constant: -10),
-            latencyLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            dot.trailingAnchor.constraint(equalTo: latencyLabel.leadingAnchor, constant: -6),
-            dot.centerYAnchor.constraint(equalTo: centerYAnchor),
-            dot.widthAnchor.constraint(equalToConstant: 7),
-            dot.heightAnchor.constraint(equalToConstant: 7)
+            cityLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor),
+            cityLabel.trailingAnchor.constraint(lessThanOrEqualTo: latencyLabel.leadingAnchor, constant: -8),
+            latencyLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            latencyLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
 
@@ -1521,34 +1082,33 @@ private final class ProfileCell: NSTableCellView {
         titleLabel.stringValue = place.title
         cityLabel.stringValue = place.city.isEmpty ? profile.server : place.city
         if let latency = latency {
-            latencyLabel.stringValue = latencyLabelText(latency)
-            dot.color = latency == .testing || latency == .unavailable ? Design.tertiaryText : Design.latency
+            latencyLabel.stringValue = latencyText(latency)
         } else {
-            latencyLabel.stringValue = "—"
-            dot.color = Design.tertiaryText
+            latencyLabel.stringValue = "\u{2014}"
         }
-        starLabel.stringValue = selected ? "★" : "☆"
-        starLabel.textColor = selected ? Design.accent : Design.tertiaryText
+        _ = selected
+        applyColors()
     }
 
-    private func latencyLabelText(_ latency: MainViewController.LatencyState) -> String {
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { applyColors() }
+    }
+
+    private func applyColors() {
+        let emphasized = backgroundStyle == .emphasized
+        let primary: NSColor = emphasized ? .alternateSelectedControlTextColor : .labelColor
+        let secondary: NSColor = emphasized ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        titleLabel.textColor = primary
+        cityLabel.textColor = secondary
+        latencyLabel.textColor = secondary
+    }
+
+    private func latencyText(_ latency: MainViewController.LatencyState) -> String {
         switch latency {
-        case .testing: return "…"
+        case .testing: return "\u{2026}"
         case .reachable(let milliseconds): return "\(milliseconds) ms"
-        case .unavailable: return "—"
+        case .unavailable: return "\u{2014}"
         }
-    }
-}
-
-private final class ServerRowView: NSTableRowView {
-    override var isOpaque: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        Design.background.setFill()
-        bounds.fill()
-        guard isSelected else { return }
-        Design.accent.withAlphaComponent(0.10).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 8, dy: 2), xRadius: 10, yRadius: 10).fill()
     }
 }
 
@@ -1624,60 +1184,5 @@ private final class PowerButton: NSButton {
         stem.lineWidth = 3.3
         stem.lineCapStyle = .round
         stem.stroke()
-    }
-}
-
-private final class WorldMapView: NSView {
-    private var cache: NSImage?
-    private var cacheSize: NSSize = .zero
-
-    override var isOpaque: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        cache = nil
-        needsDisplay = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let size = bounds.size
-        guard size.width > 20, size.height > 20 else { return }
-        if cache == nil || abs(cacheSize.width - size.width) > 12 || abs(cacheSize.height - size.height) > 12 {
-            cache = render(size)
-            cacheSize = size
-        }
-        cache?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
-    }
-
-    private func render(_ size: NSSize) -> NSImage? {
-        let image = NSImage(size: size)
-        image.lockFocus()
-        Design.mapDot.setFill()
-        let continents: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            (0.19, 0.67, 0.18, 0.20), (0.31, 0.31, 0.09, 0.24),
-            (0.48, 0.69, 0.08, 0.09), (0.52, 0.45, 0.10, 0.20),
-            (0.68, 0.66, 0.24, 0.19), (0.82, 0.30, 0.10, 0.08)
-        ]
-        var y: CGFloat = 8
-        while y < size.height - 8 {
-            var x: CGFloat = 8
-            while x < size.width - 8 {
-                let nx = x / size.width
-                let ny = y / size.height
-                let inside = continents.contains { continent in
-                    let dx = (nx - continent.0) / continent.2
-                    let dy = (ny - continent.1) / continent.3
-                    return dx * dx + dy * dy <= 1
-                }
-                if inside {
-                    NSBezierPath(ovalIn: NSRect(x: x, y: y, width: 2.4, height: 2.4)).fill()
-                }
-                x += 12
-            }
-            y += 12
-        }
-        image.unlockFocus()
-        return image
     }
 }

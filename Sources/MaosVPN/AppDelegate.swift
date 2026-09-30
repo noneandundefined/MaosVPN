@@ -16,28 +16,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         let controller = MainViewController()
-        let window = MainWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 740),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Maos VPN"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = Design.background
-        window.minSize = NSSize(width: 980, height: 680)
+        window.minSize = NSSize(width: 640, height: 480)
         window.tabbingMode = .disallowed
-        if #available(macOS 11.0, *) {
-            window.titlebarSeparatorStyle = .none
-        }
-        let toolbar = NSToolbar(identifier: "MaosVPN.Header")
-        toolbar.showsBaselineSeparator = false
-        toolbar.allowsUserCustomization = false
-        toolbar.autosavesConfiguration = false
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
         window.center()
         window.contentViewController = controller
 
@@ -146,36 +133,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: L10n.text(.quitAnyway))
             return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
         }
-    }
-}
-
-/// Forwards clicks in the transparent title bar to the header controls.
-/// Traffic-light buttons and empty space still go through the normal window path.
-final class MainWindow: NSWindow {
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown,
-           event.locationInWindow.y > contentLayoutRect.maxY,
-           let content = contentView,
-           let hit = content.hitTest(event.locationInWindow),
-           let target = interactiveTarget(hit, stoppingAt: content) {
-            if !isKeyWindow { makeKey() }
-            if let field = target as? NSTextField {
-                makeFirstResponder(field)
-            }
-            target.mouseDown(with: event)
-            return
-        }
-        super.sendEvent(event)
-    }
-
-    private func interactiveTarget(_ view: NSView, stoppingAt root: NSView) -> NSView? {
-        var current: NSView? = view
-        while let candidate = current, candidate !== root {
-            if candidate is HeaderControl { return candidate }
-            if let field = candidate as? NSTextField, field.isEditable { return candidate }
-            current = candidate.superview
-        }
-        return nil
     }
 }
 

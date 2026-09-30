@@ -1,7 +1,5 @@
 import AppKit
 
-protocol HeaderControl: AnyObject {}
-
 enum Design {
     static let headerHeight: CGFloat = 56
     static let background = adaptive(
