@@ -131,17 +131,42 @@ else
 fi
 
 sync
+
+# Finder/diskimages-helper can briefly keep the mounted image busy on GitHub's
+# macOS runners even after the window is closed. Close any remaining Finder
+# window first, then retry a graceful detach before falling back to a forced
+# unmount/detach sequence.
+osascript -e 'tell application "Finder" to close every window whose name is "Maos VPN"' >/dev/null 2>&1 || true
+sleep 1
+
 DETACHED=false
-for attempt in 1 2 3; do
-  if hdiutil detach "$DEVICE"; then
+for attempt in 1 2 3 4 5; do
+  if hdiutil detach "$DEVICE" >/dev/null 2>&1; then
     DETACHED=true
     break
   fi
   sleep 2
 done
+
 if [[ "$DETACHED" != true ]]; then
-  hdiutil detach -force "$DEVICE"
+  echo "DMG is still busy; forcing unmount before detach"
+  diskutil unmountDisk force "$DEVICE" >/dev/null 2>&1 || true
+
+  for attempt in 1 2 3 4 5; do
+    if hdiutil detach -force "$DEVICE" >/dev/null 2>&1; then
+      DETACHED=true
+      break
+    fi
+    sleep 2
+  done
 fi
+
+if [[ "$DETACHED" != true ]]; then
+  echo "Failed to detach $DEVICE after retries" >&2
+  hdiutil info >&2 || true
+  exit 1
+fi
+
 DEVICE=""
 trap - EXIT
 hdiutil convert "$DMG_RW" -format UDZO -imagekey zlib-level=9 -o "$ROOT_DIR/dist/MaosVPN-macOS-10.15-Intel.dmg"
