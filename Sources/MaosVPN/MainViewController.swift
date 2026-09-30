@@ -2,7 +2,7 @@ import AppKit
 import MaosVPNCore
 
 final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTextFieldDelegate, NSMenuDelegate {
-    private enum LatencyState: Equatable {
+    fileprivate enum LatencyState: Equatable {
         case testing
         case reachable(Int)
         case unavailable
@@ -1653,8 +1653,6 @@ private final class WorldMapView: NSView {
     private func render(_ size: NSSize) -> NSImage? {
         let image = NSImage(size: size)
         image.lockFocus()
-        NSColor.clear.setFill()
-        NSRectFillUsingOperation(NSRect(origin: .zero, size: size), .copy)
         Design.mapDot.setFill()
         let continents: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
             (0.19, 0.67, 0.18, 0.20), (0.31, 0.31, 0.09, 0.24),
