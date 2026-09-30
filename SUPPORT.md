@@ -19,6 +19,8 @@ Right-click the app and choose **Open**. If necessary, follow the Gatekeeper ins
 
 Check that it starts with `https://`, is still active, and opens on the same Mac. Provider pages and subscription API links are different; Maos VPN needs the API/subscription link that returns share profiles.
 
+If the provider reports that the device was rejected, open the provider's device-management page and remove an unused device before reloading. Maos VPN keeps one random installation ID and reuses it for every refresh; reinstalling macOS or deleting the app's preferences may make the provider count it as a new device.
+
 ### The server list is empty
 
 The subscription may use an unsupported or provider-specific format. Create a bug report with a synthetic example or heavily redacted response. Do not publish your real link.
@@ -40,5 +42,7 @@ Use the provided Bug Report form. Include the Maos VPN version, exact macOS vers
 ## Кратко на русском
 
 Проверьте Intel‑архитектуру, macOS 10.15+, последнюю версию приложения и другой сервер из подписки. Временно отключите другие VPN, DNS-фильтры и прокси. Запрос пароля администратора при подключении является нормальным: он нужен для TUN-интерфейса.
+
+Если сервер подписки отклонил устройство, удалите неиспользуемое устройство в личном кабинете провайдера и загрузите подписку повторно. Maos VPN создаёт один случайный идентификатор установки и использует его при каждом обновлении.
 
 В Issue укажите версию Maos VPN, точную версию macOS, модель Mac, протокол и шаги. Не публикуйте ссылку подписки, UUID, пароль, ключи или полный лог.

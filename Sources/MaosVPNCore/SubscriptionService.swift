@@ -1,16 +1,28 @@
 import Foundation
 
 public final class SubscriptionService {
-    private let session: URLSession
+    static let hardwareIDDefaultsKey = "subscriptionHardwareID"
 
-    public init(session: URLSession = .shared) {
+    private let session: URLSession
+    private let hardwareID: String
+
+    public init(
+        session: URLSession = .shared,
+        hardwareID: String? = nil,
+        defaults: UserDefaults = .standard
+    ) {
         self.session = session
+        self.hardwareID = hardwareID ?? Self.persistentHardwareID(in: defaults)
     }
 
     public func load(from url: URL, completion: @escaping (Result<[VPNProfile], Error>) -> Void) {
-        var request = URLRequest(url: url)
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        var request = Self.makeRequest(
+            for: url,
+            hardwareID: hardwareID,
+            osVersion: "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
+        )
         request.timeoutInterval = 20
-        request.setValue("MaosVPN/1.0 (macOS)", forHTTPHeaderField: "User-Agent")
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
 
         session.dataTask(with: request) { data, response, error in
@@ -23,6 +35,11 @@ public final class SubscriptionService {
                     russian: "сервер подписки вернул HTTP \(http.statusCode)",
                     english: "the subscription server returned HTTP \(http.statusCode)"
                 ))))
+                return
+            }
+            if let http = response as? HTTPURLResponse,
+               http.value(forHTTPHeaderField: "x-hwid-not-supported")?.lowercased() == "true" {
+                completion(.failure(MaosVPNError.subscriptionAccessRejected))
                 return
             }
             guard let data = data, !data.isEmpty else {
@@ -42,6 +59,37 @@ public final class SubscriptionService {
                 completion(.failure(error))
             }
         }.resume()
+    }
+
+    static func persistentHardwareID(in defaults: UserDefaults) -> String {
+        if let existing = defaults.string(forKey: hardwareIDDefaultsKey),
+           !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return existing
+        }
+
+        let identifier = UUID().uuidString.lowercased()
+        defaults.set(identifier, forKey: hardwareIDDefaultsKey)
+        return identifier
+    }
+
+    static func makeRequest(
+        for url: URL,
+        hardwareID: String,
+        osVersion: String,
+        deviceModel: String = "Mac"
+    ) -> URLRequest {
+        var request = URLRequest(url: url)
+
+        // Happ-compatible panels use these headers to choose the subscription
+        // format and, when enabled, account for a device without returning a
+        // fake 0.0.0.0:1 update profile.
+        request.setValue("Happ/4.3.0", forHTTPHeaderField: "User-Agent")
+        request.setValue(hardwareID, forHTTPHeaderField: "X-Hwid")
+        request.setValue("macOS", forHTTPHeaderField: "X-Device-Os")
+        request.setValue(osVersion, forHTTPHeaderField: "X-Ver-Os")
+        request.setValue(deviceModel, forHTTPHeaderField: "X-Device-Model")
+
+        return request
     }
 }
 
@@ -70,7 +118,19 @@ enum ShareLinkParser {
         guard !profiles.isEmpty else {
             throw MaosVPNError.unsupportedSubscription
         }
+        guard !profiles.allSatisfy({ isProviderPlaceholder($0) }) else {
+            throw MaosVPNError.subscriptionAccessRejected
+        }
         return profiles
+    }
+
+    private static func isProviderPlaceholder(_ profile: VPNProfile) -> Bool {
+        let normalizedName = profile.name.lowercased()
+        let updateMessage = normalizedName.contains("обновите приложение")
+            || normalizedName.contains("update app")
+            || normalizedName.contains("update the app")
+        let unroutableAddress = profile.server == "0.0.0.0" || profile.server == "::"
+        return updateMessage || (unroutableAddress && profile.port == 1)
     }
 
     static func parse(_ link: String) throws -> VPNProfile {

@@ -26,6 +26,40 @@ final class ShareLinkParserTests: XCTestCase {
         XCTAssertEqual(profiles[0].parameters["type"], "ws")
     }
 
+    func testSubscriptionRequestUsesStableHappDeviceHeaders() {
+        let suiteName = "MaosVPNTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let firstHardwareID = SubscriptionService.persistentHardwareID(in: defaults)
+        let secondHardwareID = SubscriptionService.persistentHardwareID(in: defaults)
+        XCTAssertEqual(firstHardwareID, secondHardwareID)
+        XCTAssertNotNil(UUID(uuidString: firstHardwareID))
+
+        let request = SubscriptionService.makeRequest(
+            for: URL(string: "https://example.com/sub/test")!,
+            hardwareID: firstHardwareID,
+            osVersion: "10.15.7"
+        )
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Happ/4.3.0")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hwid"), firstHardwareID)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Device-Os"), "macOS")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Ver-Os"), "10.15.7")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Device-Model"), "Mac")
+    }
+
+    func testRejectsProviderUpdatePlaceholder() {
+        let placeholder = "vless://00000000-0000-0000-0000-000000000000@0.0.0.0:1?encryption=none&type=tcp&security=none#%F0%9F%9A%A7%20Update%20the%20app%20%F0%9F%9A%A7"
+        let encoded = Data(placeholder.utf8).base64EncodedData()
+
+        XCTAssertThrowsError(try ShareLinkParser.parseSubscription(encoded)) { error in
+            guard let vpnError = error as? MaosVPNError,
+                  case .subscriptionAccessRejected = vpnError else {
+                return XCTFail("Expected subscriptionAccessRejected, got \(error)")
+            }
+        }
+    }
+
     func testParsesTrojan() throws {
         let profile = try ShareLinkParser.parse("trojan://secret@example.org:443?security=tls&sni=example.org#Europe")
         XCTAssertEqual(profile.kind, .trojan)

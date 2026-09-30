@@ -73,6 +73,7 @@ public enum MaosVPNError: LocalizedError {
     case invalidSubscriptionURL
     case emptySubscription
     case unsupportedSubscription
+    case subscriptionAccessRejected
     case malformedProfile(String)
     case missingCore
     case invalidConfiguration(String)
@@ -95,6 +96,11 @@ public enum MaosVPNError: LocalizedError {
             return AppLanguage.text(
                 russian: "В подписке нет поддерживаемых серверов (VLESS, VMess, Trojan или Shadowsocks).",
                 english: "The subscription contains no supported servers (VLESS, VMess, Trojan, or Shadowsocks)."
+            )
+        case .subscriptionAccessRejected:
+            return AppLanguage.text(
+                russian: "Сервер подписки отклонил это устройство. Проверьте лимит устройств у провайдера и загрузите подписку снова.",
+                english: "The subscription server rejected this device. Check your provider's device limit and load the subscription again."
             )
         case .malformedProfile(let reason):
             return AppLanguage.text(
