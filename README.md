@@ -32,7 +32,10 @@ Requirements:
 
 ## Features
 
-- Native, uncluttered AppKit interface;
+- Native AppKit interface with system light and dark themes;
+- multiple independently grouped, collapsible subscriptions;
+- large circular connection control with a live session timer;
+- per-server latency and automatic fastest-server selection;
 - Russian and English UI with live language switching;
 - Base64, plain-text, and sing-box JSON subscriptions;
 - VLESS, VMess, Trojan, Shadowsocks, and Hysteria2 profiles;
@@ -47,9 +50,10 @@ Requirements:
 1. Download and open the DMG.
 2. Drag **Maos VPN.app** into **Applications**.
 3. On first launch, right-click the app and choose **Open**.
-4. Paste your subscription URL and click **Load**.
-5. Select a server and click **Connect**.
-6. Approve the macOS administrator prompt used to create the TUN interface.
+4. Paste your first subscription URL and click **Add subscription**.
+5. Use the **+** button to add more subscription URLs or sing-box JSON configurations.
+6. Open a subscription group, select a server, and click the round **Connect** button.
+7. Approve the macOS administrator prompt used to create the TUN interface.
 
 The administrator password is handled by macOS and is never received or stored by Maos VPN.
 

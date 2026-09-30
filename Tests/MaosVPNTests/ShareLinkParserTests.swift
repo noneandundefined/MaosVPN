@@ -33,6 +33,16 @@ final class ShareLinkParserTests: XCTestCase {
         XCTAssertEqual(profiles[0].parameters["type"], "ws")
     }
 
+    func testPublicConfigurationParserAcceptsSingBoxJSON() throws {
+        let json = """
+        {"outbounds":[{"type":"vless","tag":"JSON server","server":"json.example.com","server_port":443,"uuid":"123e4567-e89b-12d3-a456-426614174000"}]}
+        """
+        let profiles = try SubscriptionService.parseConfiguration(json)
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].name, "JSON server")
+        XCTAssertEqual(profiles[0].server, "json.example.com")
+    }
+
     func testSubscriptionRequestUsesStableHappDeviceHeaders() {
         let suiteName = "MaosVPNTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

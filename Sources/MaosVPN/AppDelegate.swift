@@ -18,13 +18,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = MainViewController()
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 920, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 1040, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Maos VPN"
-        window.minSize = NSSize(width: 920, height: 560)
+        window.minSize = NSSize(width: 940, height: 620)
         window.center()
         window.contentViewController = controller
 

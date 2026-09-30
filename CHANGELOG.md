@@ -9,7 +9,11 @@ All notable user-facing changes will be documented here. The project follows sem
 - System light/dark appearance with live macOS theme changes.
 - Per-server latency results and automatic fastest-server selection.
 - Automatic update check on every launch and a Dock update badge.
-- Hidden persisted subscription URL with one-click refresh.
+- Hidden persisted subscription sources.
+- First-run subscription onboarding and a URL-free main screen.
+- Multiple named, collapsible subscription groups with URL and JSON sources.
+- Large circular connect control with live VPN session duration.
+- Branded drag-to-Applications DMG layout.
 - Native macOS 10.15+ Intel client.
 - Base64 and plain-text subscription import.
 - VLESS, VMess, Trojan, and Shadowsocks parsing.

@@ -61,6 +61,18 @@ public final class SubscriptionService {
         }.resume()
     }
 
+    public static func parseConfiguration(_ text: String) throws -> [VPNProfile] {
+        let data = Data(text.utf8)
+        guard !data.isEmpty else { throw MaosVPNError.emptySubscription }
+        guard data.count <= 10 * 1024 * 1024 else {
+            throw MaosVPNError.malformedProfile(AppLanguage.text(
+                russian: "конфигурация превышает 10 МБ",
+                english: "the configuration exceeds 10 MB"
+            ))
+        }
+        return try ShareLinkParser.parseSubscription(data)
+    }
+
     static func persistentHardwareID(in defaults: UserDefaults) -> String {
         if let existing = defaults.string(forKey: hardwareIDDefaultsKey),
            !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

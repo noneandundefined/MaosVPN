@@ -65,11 +65,64 @@ codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ROOT_DIR/dist/MaosVPN-macOS-10.15-Intel.zip"
 
 DMG_ROOT="$ROOT_DIR/.build/dmg-root"
-rm -rf "$DMG_ROOT"
-mkdir -p "$DMG_ROOT"
+DMG_BACKGROUND="$ROOT_DIR/.build/dmg-background.png"
+DMG_RW="$ROOT_DIR/.build/MaosVPN-readwrite.dmg"
+DMG_MOUNT="$ROOT_DIR/.build/dmg-mount"
+rm -rf "$DMG_ROOT" "$DMG_MOUNT"
+rm -f "$DMG_RW" "$ROOT_DIR/dist/MaosVPN-macOS-10.15-Intel.dmg"
+mkdir -p "$DMG_ROOT/.background" "$DMG_MOUNT"
 cp -R "$APP_DIR" "$DMG_ROOT/"
 ln -s /Applications "$DMG_ROOT/Applications"
-hdiutil create -volname "Maos VPN" -srcfolder "$DMG_ROOT" -ov -format UDZO "$ROOT_DIR/dist/MaosVPN-macOS-10.15-Intel.dmg"
+swift "$ROOT_DIR/Scripts/generate_dmg_background.swift" "$DMG_BACKGROUND"
+cp "$DMG_BACKGROUND" "$DMG_ROOT/.background/background.png"
+
+hdiutil create -volname "Maos VPN" -srcfolder "$DMG_ROOT" -ov -fs HFS+ -format UDRW "$DMG_RW"
+DEVICE="$(hdiutil attach -readwrite -noverify -noautoopen -mountpoint "$DMG_MOUNT" "$DMG_RW" | awk 'NR == 1 { print $1 }')"
+if [[ -z "$DEVICE" ]]; then
+  echo "Could not attach the read-write DMG" >&2
+  exit 1
+fi
+cleanup_dmg() {
+  if [[ -n "${DEVICE:-}" ]]; then
+    hdiutil detach "$DEVICE" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_dmg EXIT
+/usr/bin/chflags hidden "$DMG_MOUNT/.background" || true
+
+if /usr/bin/osascript <<'APPLESCRIPT'
+tell application "Finder"
+  tell disk "Maos VPN"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {120, 120, 720, 480}
+    set theViewOptions to the icon view options of container window
+    set arrangement of theViewOptions to not arranged
+    set icon size of theViewOptions to 96
+    set text size of theViewOptions to 13
+    set background picture of theViewOptions to file ".background:background.png"
+    set position of item "Maos VPN.app" of container window to {150, 185}
+    set position of item "Applications" of container window to {450, 185}
+    close
+    open
+    update without registering applications
+    delay 2
+  end tell
+end tell
+APPLESCRIPT
+then
+  echo "Custom DMG layout created"
+else
+  echo "::warning title=DMG layout::Finder could not save the custom layout; packaging a functional fallback DMG."
+fi
+
+sync
+hdiutil detach "$DEVICE"
+DEVICE=""
+trap - EXIT
+hdiutil convert "$DMG_RW" -format UDZO -imagekey zlib-level=9 -o "$ROOT_DIR/dist/MaosVPN-macOS-10.15-Intel.dmg"
 
 cd "$ROOT_DIR/dist"
 shasum -a 256 MaosVPN-macOS-10.15-Intel.zip MaosVPN-macOS-10.15-Intel.dmg > SHA256SUMS.txt

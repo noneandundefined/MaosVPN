@@ -102,12 +102,14 @@ jobs:
           ### Highlights
 
           - Import servers from a subscription URL in one click
+          - Multiple named, collapsible subscription groups and direct JSON import
           - VLESS, VMess, Trojan, Shadowsocks, and Hysteria2 profiles
           - Base64, plain-text, and sing-box JSON subscriptions
           - TCP, WebSocket, gRPC, HTTPUpgrade, TLS, and Reality support
           - Full-device VPN routing for browsers and applications
           - Native macOS interface that follows the system light or dark appearance
           - Per-server latency test and automatic fastest-server selection
+          - Large circular connection control with a live session timer
           - English and Russian languages with live switching
           - Profiles stored locally, with no analytics or tracking
           - Automatic update alerts at launch and checksum-verified installation
@@ -137,12 +139,14 @@ jobs:
           ### Возможности
 
           - Импорт серверов по ссылке подписки
+          - Несколько именованных раскрывающихся групп подписок и импорт JSON
           - Профили VLESS, VMess, Trojan, Shadowsocks и Hysteria2
           - Подписки Base64, обычным текстом и в формате sing-box JSON
           - Поддержка TCP, WebSocket, gRPC, HTTPUpgrade, TLS и Reality
           - Системный TUN-режим для браузеров и приложений
           - Нативный интерфейс в системной светлой или тёмной теме macOS
           - Проверка пинга и автоматический выбор самого быстрого сервера
+          - Большая круглая кнопка подключения с таймером сеанса
           - Русский и английский языки с переключением без перезапуска
           - Локальное хранение профилей, без аналитики и отслеживания
           - Автоматическое уведомление при запуске и установка обновлений с проверкой SHA-256

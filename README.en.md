@@ -27,10 +27,11 @@ Only run this command for an app downloaded from this project's official Release
 
 1. Start Maos VPN.
 2. Choose **English** or **Русский** in the top-right corner.
-3. Paste your HTTPS subscription URL.
-4. Click **Load** and select a server in the sidebar.
-5. Click **Connect**.
-6. Enter your macOS administrator password when the system asks.
+3. Paste your first HTTPS subscription URL and click **Add subscription**.
+4. Use **+** to add more named subscription URLs or sing-box JSON configurations.
+5. Expand a subscription group and select a server in the sidebar.
+6. Click the large round **Connect** control. While connected, it displays the session duration.
+7. Enter your macOS administrator password when the system asks.
 
 The prompt authorizes creation of a TUN interface. Maos VPN does not see or save the password.
 
@@ -46,9 +47,7 @@ The prompt authorizes creation of a TUN interface. Maos VPN does not see or save
 
 Not every provider uses standard share links. If a profile is skipped, open a bug report with all addresses, UUIDs, passwords, public keys, and subscription tokens removed.
 
-## Updating servers
-
-Paste the same subscription URL and click **Load** again. The local list is replaced with the latest valid profiles returned by the provider.
+Subscription sources and their server groups are saved locally. Saved URLs are not displayed again in the main window.
 
 ## Uninstalling
 
