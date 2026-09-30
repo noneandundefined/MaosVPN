@@ -34,8 +34,8 @@ Requirements:
 
 - Native, uncluttered AppKit interface;
 - Russian and English UI with live language switching;
-- Base64 and plain-text subscriptions;
-- VLESS, VMess, Trojan, and Shadowsocks profiles;
+- Base64, plain-text, and sing-box JSON subscriptions;
+- VLESS, VMess, Trojan, Shadowsocks, and Hysteria2 profiles;
 - TCP, WebSocket, gRPC, HTTPUpgrade, TLS, and Reality options;
 - full-device TUN routing for browsers and applications;
 - local-only profile storage and no analytics;

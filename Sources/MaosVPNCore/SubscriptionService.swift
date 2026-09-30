@@ -80,10 +80,10 @@ public final class SubscriptionService {
     ) -> URLRequest {
         var request = URLRequest(url: url)
 
-        // Happ-compatible panels use these headers to choose the subscription
-        // format and, when enabled, account for a device without returning a
+        // Karing-compatible panels return a sing-box JSON document. The
+        // stable device headers prevent HWID-enabled panels from returning a
         // fake 0.0.0.0:1 update profile.
-        request.setValue("Happ/4.3.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Karing", forHTTPHeaderField: "User-Agent")
         request.setValue(hardwareID, forHTTPHeaderField: "X-Hwid")
         request.setValue("macOS", forHTTPHeaderField: "X-Device-Os")
         request.setValue(osVersion, forHTTPHeaderField: "X-Ver-Os")
@@ -103,6 +103,10 @@ enum ShareLinkParser {
             text = decodedText
         }
 
+        if let jsonProfiles = parseSingBoxJSON(Data(text.utf8)) {
+            return try validate(jsonProfiles)
+        }
+
         let lines = text
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -115,13 +119,170 @@ enum ShareLinkParser {
             }
         }
 
-        guard !profiles.isEmpty else {
-            throw MaosVPNError.unsupportedSubscription
-        }
+        return try validate(profiles)
+    }
+
+    private static func validate(_ profiles: [VPNProfile]) throws -> [VPNProfile] {
+        guard !profiles.isEmpty else { throw MaosVPNError.unsupportedSubscription }
         guard !profiles.allSatisfy({ isProviderPlaceholder($0) }) else {
             throw MaosVPNError.subscriptionAccessRejected
         }
         return profiles
+    }
+
+    private static func parseSingBoxJSON(_ data: Data) -> [VPNProfile]? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) else { return nil }
+
+        let outbounds: [[String: Any]]
+        if let document = json as? [String: Any],
+           let values = document["outbounds"] as? [[String: Any]] {
+            outbounds = values
+        } else if let values = json as? [[String: Any]] {
+            outbounds = values
+        } else {
+            return nil
+        }
+
+        return outbounds.compactMap(parseSingBoxOutbound)
+    }
+
+    private static func parseSingBoxOutbound(_ outbound: [String: Any]) -> VPNProfile? {
+        guard let rawType = string("type", in: outbound)?.lowercased(),
+              let server = string("server", in: outbound), !server.isEmpty,
+              let port = integer("server_port", in: outbound), (1...65535).contains(port) else {
+            return nil
+        }
+
+        let kind: VPNProtocolKind
+        let credential: String
+        switch rawType {
+        case "vless":
+            guard let uuid = string("uuid", in: outbound), !uuid.isEmpty else { return nil }
+            kind = .vless
+            credential = uuid
+        case "vmess":
+            guard let uuid = string("uuid", in: outbound), !uuid.isEmpty else { return nil }
+            kind = .vmess
+            credential = uuid
+        case "trojan":
+            guard let password = string("password", in: outbound), !password.isEmpty else { return nil }
+            kind = .trojan
+            credential = password
+        case "shadowsocks":
+            guard let password = string("password", in: outbound), !password.isEmpty,
+                  let method = string("method", in: outbound), !method.isEmpty else { return nil }
+            kind = .shadowsocks
+            credential = password
+        case "hysteria2", "hy2":
+            guard let password = string("password", in: outbound), !password.isEmpty else { return nil }
+            kind = .hysteria2
+            credential = password
+        default:
+            return nil
+        }
+
+        var parameters: [String: String] = [:]
+        copyString("flow", from: outbound, to: "flow", in: &parameters)
+        copyString("packet_encoding", from: outbound, to: "packetEncoding", in: &parameters)
+        copyScalar("up_mbps", from: outbound, to: "up_mbps", in: &parameters)
+        copyScalar("down_mbps", from: outbound, to: "down_mbps", in: &parameters)
+
+        if kind == .vmess {
+            copyString("security", from: outbound, to: "scy", in: &parameters)
+            copyScalar("alter_id", from: outbound, to: "aid", in: &parameters)
+        } else if kind == .shadowsocks {
+            copyString("method", from: outbound, to: "method", in: &parameters)
+        }
+
+        if let transport = outbound["transport"] as? [String: Any] {
+            copyString("type", from: transport, to: "type", in: &parameters)
+            copyString("path", from: transport, to: "path", in: &parameters)
+            copyString("service_name", from: transport, to: "serviceName", in: &parameters)
+            if let host = string("host", in: transport) {
+                parameters["host"] = host
+            } else if let hosts = transport["host"] as? [String], !hosts.isEmpty {
+                parameters["host"] = hosts.joined(separator: ",")
+            } else if let headers = transport["headers"] as? [String: Any],
+                      let host = headers.first(where: { $0.key.lowercased() == "host" })?.value as? String {
+                parameters["host"] = host
+            }
+        }
+
+        if let tls = outbound["tls"] as? [String: Any], boolean("enabled", in: tls) != false {
+            parameters["security"] = "tls"
+            copyString("server_name", from: tls, to: "sni", in: &parameters)
+            if boolean("insecure", in: tls) == true { parameters["allowInsecure"] = "true" }
+            if let alpn = tls["alpn"] as? [String], !alpn.isEmpty {
+                parameters["alpn"] = alpn.joined(separator: ",")
+            }
+            if let utls = tls["utls"] as? [String: Any] {
+                copyString("fingerprint", from: utls, to: "fp", in: &parameters)
+            }
+            if let reality = tls["reality"] as? [String: Any], boolean("enabled", in: reality) != false {
+                parameters["security"] = "reality"
+                copyString("public_key", from: reality, to: "pbk", in: &parameters)
+                copyString("short_id", from: reality, to: "sid", in: &parameters)
+            }
+        }
+
+        if let obfs = outbound["obfs"] as? [String: Any] {
+            copyString("type", from: obfs, to: "obfs", in: &parameters)
+            copyString("password", from: obfs, to: "obfs-password", in: &parameters)
+        }
+
+        let name = string("tag", in: outbound).flatMap { $0.isEmpty ? nil : $0 } ?? "\(server):\(port)"
+        return VPNProfile(
+            name: name,
+            kind: kind,
+            server: server,
+            port: port,
+            credential: credential,
+            parameters: parameters
+        )
+    }
+
+    private static func string(_ key: String, in object: [String: Any]) -> String? {
+        object[key] as? String
+    }
+
+    private static func integer(_ key: String, in object: [String: Any]) -> Int? {
+        if let value = object[key] as? Int { return value }
+        if let value = object[key] as? NSNumber { return value.intValue }
+        if let value = object[key] as? String { return Int(value) }
+        return nil
+    }
+
+    private static func boolean(_ key: String, in object: [String: Any]) -> Bool? {
+        if let value = object[key] as? Bool { return value }
+        if let value = object[key] as? NSNumber { return value.boolValue }
+        if let value = object[key] as? String {
+            return ["1", "true", "yes"].contains(value.lowercased())
+        }
+        return nil
+    }
+
+    private static func copyString(
+        _ sourceKey: String,
+        from object: [String: Any],
+        to targetKey: String,
+        in parameters: inout [String: String]
+    ) {
+        if let value = string(sourceKey, in: object), !value.isEmpty {
+            parameters[targetKey] = value
+        }
+    }
+
+    private static func copyScalar(
+        _ sourceKey: String,
+        from object: [String: Any],
+        to targetKey: String,
+        in parameters: inout [String: String]
+    ) {
+        if let value = object[sourceKey] as? String {
+            parameters[targetKey] = value
+        } else if let value = object[sourceKey] as? NSNumber {
+            parameters[targetKey] = value.stringValue
+        }
     }
 
     private static func isProviderPlaceholder(_ profile: VPNProfile) -> Bool {
@@ -170,6 +331,14 @@ enum ShareLinkParser {
             return VPNProfile(name: name, kind: .trojan, server: host, port: port, credential: password, parameters: query)
         case "ss":
             return try parseShadowsocks(components: components, host: host, port: port, name: name, query: query)
+        case "hysteria2", "hy2":
+            guard let password = components.user?.removingPercentEncoding, !password.isEmpty else {
+                throw MaosVPNError.malformedProfile(AppLanguage.text(
+                    russian: "в Hysteria2 отсутствует пароль",
+                    english: "Hysteria2 password is missing"
+                ))
+            }
+            return VPNProfile(name: name, kind: .hysteria2, server: host, port: port, credential: password, parameters: query)
         default:
             throw MaosVPNError.malformedProfile(AppLanguage.text(
                 russian: "протокол \(scheme) пока не поддерживается",

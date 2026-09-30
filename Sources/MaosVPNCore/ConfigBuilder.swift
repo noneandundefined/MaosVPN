@@ -87,21 +87,35 @@ public enum SingBoxConfigBuilder {
             }
             outbound["method"] = method
             outbound["password"] = profile.credential
+        case .hysteria2:
+            outbound["password"] = profile.credential
+            if let upMbps = Int(profile.parameters["up_mbps"] ?? ""), upMbps > 0 {
+                outbound["up_mbps"] = upMbps
+            }
+            if let downMbps = Int(profile.parameters["down_mbps"] ?? ""), downMbps > 0 {
+                outbound["down_mbps"] = downMbps
+            }
+            if let obfsType = nonEmpty(profile.parameters["obfs"]),
+               let obfsPassword = nonEmpty(profile.parameters["obfs-password"] ?? profile.parameters["obfs_password"]) {
+                outbound["obfs"] = ["type": obfsType, "password": obfsPassword]
+            }
         }
 
-        let network = (profile.parameters["type"] ?? profile.parameters["net"] ?? "tcp").lowercased()
-        if let transport = makeTransport(network: network, parameters: profile.parameters) {
-            outbound["transport"] = transport
+        if profile.kind != .hysteria2 {
+            let network = (profile.parameters["type"] ?? profile.parameters["net"] ?? "tcp").lowercased()
+            if let transport = makeTransport(network: network, parameters: profile.parameters) {
+                outbound["transport"] = transport
+            }
         }
 
-        let defaultSecurity = profile.kind == .trojan ? "tls" : "none"
+        let defaultSecurity = (profile.kind == .trojan || profile.kind == .hysteria2) ? "tls" : "none"
         let security = (profile.parameters["security"] ?? profile.parameters["tls"] ?? defaultSecurity).lowercased()
         if security == "tls" || security == "reality" {
             var tls: [String: Any] = ["enabled": true]
             if let serverName = nonEmpty(profile.parameters["sni"] ?? profile.parameters["peer"]) {
                 tls["server_name"] = serverName
             }
-            if truthy(profile.parameters["allowInsecure"]) { tls["insecure"] = true }
+            if truthy(profile.parameters["allowInsecure"] ?? profile.parameters["insecure"]) { tls["insecure"] = true }
             if let alpn = nonEmpty(profile.parameters["alpn"]) {
                 tls["alpn"] = alpn.split(separator: ",").map(String.init)
             }

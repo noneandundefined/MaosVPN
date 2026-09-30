@@ -36,11 +36,12 @@ xattr -dr com.apple.quarantine "/Applications/Maos VPN.app"
 
 ## Поддерживаемые форматы
 
-- Подписки Base64 или обычным текстом;
+- Подписки Base64, обычным текстом или в формате sing-box JSON;
 - VLESS;
 - VMess;
 - Trojan;
 - Shadowsocks;
+- Hysteria2, включая обфускацию Salamander;
 - TCP, HTTP, WebSocket, gRPC, HTTPUpgrade, QUIC, TLS и Reality — если параметры присутствуют в ссылке профиля.
 
 Не все провайдеры используют стандартные share-ссылки. Если профиль пропускается, создайте Bug Report, предварительно удалив адреса, UUID, пароли, public key и токен подписки.

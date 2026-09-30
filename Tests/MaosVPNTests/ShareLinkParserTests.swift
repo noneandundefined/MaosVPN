@@ -48,11 +48,81 @@ final class ShareLinkParserTests: XCTestCase {
             hardwareID: firstHardwareID,
             osVersion: "10.15.7"
         )
-        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Happ/4.3.0")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Karing")
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hwid"), firstHardwareID)
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Device-Os"), "macOS")
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Ver-Os"), "10.15.7")
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Device-Model"), "Mac")
+    }
+
+    func testParsesSingBoxJSONOutbounds() throws {
+        let source = """
+        {
+          "outbounds": [
+            { "type": "selector", "tag": "Proxy", "outbounds": ["Fast", "Reality"] },
+            {
+              "type": "hysteria2",
+              "tag": "Fast",
+              "server": "hy2.example.com",
+              "server_port": 9443,
+              "password": "test-password",
+              "tls": { "enabled": true, "server_name": "cdn.example.com", "alpn": ["h3"] },
+              "obfs": { "type": "salamander", "password": "test-obfs" }
+            },
+            {
+              "type": "vless",
+              "tag": "Reality",
+              "server": "reality.example.com",
+              "server_port": 443,
+              "uuid": "123e4567-e89b-12d3-a456-426614174000",
+              "transport": { "type": "grpc", "service_name": "grpc" },
+              "tls": {
+                "enabled": true,
+                "server_name": "www.example.com",
+                "utls": { "enabled": true, "fingerprint": "chrome" },
+                "reality": { "enabled": true, "public_key": "test-public-key", "short_id": "1234abcd" }
+              }
+            },
+            { "type": "direct", "tag": "direct" }
+          ]
+        }
+        """
+
+        let profiles = try ShareLinkParser.parseSubscription(Data(source.utf8))
+        XCTAssertEqual(profiles.count, 2)
+
+        let hysteria = try XCTUnwrap(profiles.first(where: { $0.kind == .hysteria2 }))
+        XCTAssertEqual(hysteria.name, "Fast")
+        XCTAssertEqual(hysteria.server, "hy2.example.com")
+        XCTAssertEqual(hysteria.parameters["sni"], "cdn.example.com")
+        XCTAssertEqual(hysteria.parameters["alpn"], "h3")
+        XCTAssertEqual(hysteria.parameters["obfs"], "salamander")
+        XCTAssertEqual(hysteria.parameters["obfs-password"], "test-obfs")
+
+        let hysteriaConfig = try SingBoxConfigBuilder.makeConfig(for: hysteria)
+        let hysteriaOutbounds = try XCTUnwrap(hysteriaConfig["outbounds"] as? [[String: Any]])
+        let hysteriaOutbound = try XCTUnwrap(hysteriaOutbounds.first)
+        XCTAssertEqual(hysteriaOutbound["type"] as? String, "hysteria2")
+        XCTAssertEqual((hysteriaOutbound["obfs"] as? [String: Any])?["type"] as? String, "salamander")
+
+        let vless = try XCTUnwrap(profiles.first(where: { $0.kind == .vless }))
+        XCTAssertEqual(vless.name, "Reality")
+        XCTAssertEqual(vless.parameters["type"], "grpc")
+        XCTAssertEqual(vless.parameters["serviceName"], "grpc")
+        XCTAssertEqual(vless.parameters["security"], "reality")
+        XCTAssertEqual(vless.parameters["sni"], "www.example.com")
+        XCTAssertEqual(vless.parameters["fp"], "chrome")
+        XCTAssertEqual(vless.parameters["pbk"], "test-public-key")
+        XCTAssertEqual(vless.parameters["sid"], "1234abcd")
+    }
+
+    func testParsesHysteria2ShareLink() throws {
+        let profile = try ShareLinkParser.parse(
+            "hysteria2://secret@example.com:443?sni=cdn.example.com&obfs=salamander&obfs-password=mask#Fast"
+        )
+        XCTAssertEqual(profile.kind, .hysteria2)
+        XCTAssertEqual(profile.credential, "secret")
+        XCTAssertEqual(profile.parameters["obfs"], "salamander")
     }
 
     func testRejectsProviderUpdatePlaceholder() {

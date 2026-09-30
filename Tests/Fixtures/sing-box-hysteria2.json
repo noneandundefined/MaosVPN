@@ -1,0 +1,53 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      { "type": "local", "tag": "dns-direct" },
+      { "type": "https", "tag": "dns-remote", "server": "1.1.1.1", "detour": "proxy" }
+    ],
+    "final": "dns-remote",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+      "mtu": 9000,
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "hysteria2",
+      "tag": "proxy",
+      "server": "example.com",
+      "server_port": 443,
+      "password": "test-password",
+      "tls": {
+        "enabled": true,
+        "server_name": "example.com",
+        "alpn": ["h3"]
+      },
+      "obfs": {
+        "type": "salamander",
+        "password": "test-obfs-password"
+      }
+    },
+    { "type": "direct", "tag": "direct" }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-direct",
+    "rules": [
+      { "inbound": "tun-in", "action": "sniff" },
+      { "protocol": "dns", "action": "hijack-dns" }
+    ],
+    "final": "proxy"
+  }
+}

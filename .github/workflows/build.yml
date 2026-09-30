@@ -41,7 +41,10 @@ jobs:
 
       - name: Validate VPN engine configuration
         shell: bash
-        run: "$CORE_PATH check -c Tests/Fixtures/sing-box.json"
+        run: |
+          set -euo pipefail
+          "$CORE_PATH" check -c Tests/Fixtures/sing-box.json
+          "$CORE_PATH" check -c Tests/Fixtures/sing-box-hysteria2.json
 
       - name: Build, test and package
         shell: bash
@@ -85,7 +88,8 @@ jobs:
           ### Highlights
 
           - Import servers from a subscription URL in one click
-          - VLESS, VMess, Trojan, and Shadowsocks profiles
+          - VLESS, VMess, Trojan, Shadowsocks, and Hysteria2 profiles
+          - Base64, plain-text, and sing-box JSON subscriptions
           - TCP, WebSocket, gRPC, HTTPUpgrade, TLS, and Reality support
           - Full-device VPN routing for browsers and applications
           - Native, minimal macOS interface
@@ -118,7 +122,8 @@ jobs:
           ### Возможности
 
           - Импорт серверов по ссылке подписки
-          - Профили VLESS, VMess, Trojan и Shadowsocks
+          - Профили VLESS, VMess, Trojan, Shadowsocks и Hysteria2
+          - Подписки Base64, обычным текстом и в формате sing-box JSON
           - Поддержка TCP, WebSocket, gRPC, HTTPUpgrade, TLS и Reality
           - Системный TUN-режим для браузеров и приложений
           - Нативный минималистичный интерфейс macOS

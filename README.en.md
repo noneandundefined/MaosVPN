@@ -36,11 +36,12 @@ The prompt authorizes creation of a TUN interface. Maos VPN does not see or save
 
 ## Supported formats
 
-- Base64 or plain-text subscription lists;
+- Base64, plain-text, or sing-box JSON subscription lists;
 - VLESS;
 - VMess;
 - Trojan;
 - Shadowsocks;
+- Hysteria2, including Salamander obfuscation;
 - TCP, HTTP, WebSocket, gRPC, HTTPUpgrade, QUIC, TLS, and Reality parameters supported by the profile parser.
 
 Not every provider uses standard share links. If a profile is skipped, open a bug report with all addresses, UUIDs, passwords, public keys, and subscription tokens removed.

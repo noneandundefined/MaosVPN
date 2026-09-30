@@ -459,10 +459,15 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private func restoreProfiles() {
         guard let data = defaults.data(forKey: "profiles"),
               let saved = try? JSONDecoder().decode([VPNProfile].self, from: data) else { return }
-        profiles = saved
+        // Remove the fake update profile returned by some HWID-enabled panels
+        // to older clients so it cannot remain selected after an app upgrade.
+        profiles = saved.filter { profile in
+            !(profile.port == 1 && (profile.server == "0.0.0.0" || profile.server == "::"))
+        }
+        if profiles.count != saved.count { persistProfiles() }
         serverTable.reloadData()
-        countLabel.stringValue = serverCountText(saved.count)
-        if !saved.isEmpty { serverTable.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
+        countLabel.stringValue = serverCountText(profiles.count)
+        if !profiles.isEmpty { serverTable.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
         updateSelection()
     }
 

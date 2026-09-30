@@ -30,6 +30,7 @@ public enum VPNProtocolKind: String, Codable, Equatable {
     case vmess
     case trojan
     case shadowsocks
+    case hysteria2
 
     public var title: String {
         switch self {
@@ -37,6 +38,7 @@ public enum VPNProtocolKind: String, Codable, Equatable {
         case .vmess: return "VMess"
         case .trojan: return "Trojan"
         case .shadowsocks: return "Shadowsocks"
+        case .hysteria2: return "Hysteria2"
         }
     }
 }
@@ -94,8 +96,8 @@ public enum MaosVPNError: LocalizedError {
             )
         case .unsupportedSubscription:
             return AppLanguage.text(
-                russian: "В подписке нет поддерживаемых серверов (VLESS, VMess, Trojan или Shadowsocks).",
-                english: "The subscription contains no supported servers (VLESS, VMess, Trojan, or Shadowsocks)."
+                russian: "В подписке нет поддерживаемых серверов (VLESS, VMess, Trojan, Shadowsocks или Hysteria2).",
+                english: "The subscription contains no supported servers (VLESS, VMess, Trojan, Shadowsocks, or Hysteria2)."
             )
         case .subscriptionAccessRejected:
             return AppLanguage.text(
