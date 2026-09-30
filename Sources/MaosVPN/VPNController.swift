@@ -53,7 +53,11 @@ final class VPNController {
                 try self.validate(coreURL: coreURL, configURL: configURL)
 
                 let logURL = self.logURL()
-                let command = "nohup \(self.shellQuote(coreURL.path)) run -c \(self.shellQuote(configURL.path)) > \(self.shellQuote(logURL.path)) 2>&1 & echo $!"
+                // Catalina's /usr/bin/nohup can fail with TIOCNOTTY when it is
+                // launched through `osascript ... with administrator privileges`.
+                // Closing stdin and redirecting both output streams lets the
+                // non-interactive shell release the background process safely.
+                let command = "\(self.shellQuote(coreURL.path)) run -c \(self.shellQuote(configURL.path)) < /dev/null > \(self.shellQuote(logURL.path)) 2>&1 & echo $!"
                 let output = try self.runPrivileged(command)
                 guard let pid = Int32(output.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 1 else {
                     throw MaosVPNError.processDidNotStart(output)
