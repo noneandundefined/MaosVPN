@@ -28,9 +28,9 @@ Only run this command for an app downloaded from this project's official Release
 1. Start Maos VPN.
 2. Choose **English** or **Русский** in the top-right corner.
 3. Paste your first HTTPS subscription URL and click **Add subscription**.
-4. Use **+** to add more named subscription URLs or sing-box JSON configurations.
+4. Use **Add subscription** in the toolbar to add more named subscription URLs or sing-box JSON configurations.
 5. Expand a subscription group and select a server in the sidebar.
-6. Click the large round **Connect** control. While connected, it displays the session duration.
+6. Use server search, **Ping test**, or **Auto select**, then click the large round connection control. While connected, it displays the session duration.
 7. Enter your macOS administrator password when the system asks.
 
 The prompt authorizes creation of a TUN interface. Maos VPN does not see or save the password.

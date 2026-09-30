@@ -6,6 +6,7 @@ All notable user-facing changes will be documented here. The project follows sem
 
 ### Added
 
+- Polished macOS-style connection dashboard with server search, a dotted world map, connection glow, and compact server/protocol cards.
 - System light/dark appearance with live macOS theme changes.
 - Per-server latency results and automatic fastest-server selection.
 - Automatic update check on every launch and a Dock update badge.

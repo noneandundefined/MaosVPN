@@ -101,6 +101,7 @@ jobs:
 
           ### Highlights
 
+          - Polished macOS-style dashboard with server search, a dotted world map, connection glow, and server/protocol cards
           - Import servers from a subscription URL in one click
           - Multiple named, collapsible subscription groups and direct JSON import
           - VLESS, VMess, Trojan, Shadowsocks, and Hysteria2 profiles
@@ -138,6 +139,7 @@ jobs:
 
           ### Возможности
 
+          - Обновлённый интерфейс в стиле macOS с поиском серверов, точечной картой мира, подсветкой подключения и карточками сервера/протокола
           - Импорт серверов по ссылке подписки
           - Несколько именованных раскрывающихся групп подписок и импорт JSON
           - Профили VLESS, VMess, Trojan, Shadowsocks и Hysteria2
