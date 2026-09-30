@@ -92,10 +92,11 @@ jobs:
           - Base64, plain-text, and sing-box JSON subscriptions
           - TCP, WebSocket, gRPC, HTTPUpgrade, TLS, and Reality support
           - Full-device VPN routing for browsers and applications
-          - Native, minimal macOS interface
+          - Native macOS interface that follows the system light or dark appearance
+          - Per-server latency test and automatic fastest-server selection
           - English and Russian languages with live switching
           - Profiles stored locally, with no analytics or tracking
-          - Automatic update notifications with checksum-verified installation
+          - Automatic update alerts at launch and checksum-verified installation
 
           ### Requirements
 
@@ -126,10 +127,11 @@ jobs:
           - Подписки Base64, обычным текстом и в формате sing-box JSON
           - Поддержка TCP, WebSocket, gRPC, HTTPUpgrade, TLS и Reality
           - Системный TUN-режим для браузеров и приложений
-          - Нативный минималистичный интерфейс macOS
+          - Нативный интерфейс в системной светлой или тёмной теме macOS
+          - Проверка пинга и автоматический выбор самого быстрого сервера
           - Русский и английский языки с переключением без перезапуска
           - Локальное хранение профилей, без аналитики и отслеживания
-          - Автоматические уведомления и установка обновлений с проверкой SHA-256
+          - Автоматическое уведомление при запуске и установка обновлений с проверкой SHA-256
 
           ### Требования
 

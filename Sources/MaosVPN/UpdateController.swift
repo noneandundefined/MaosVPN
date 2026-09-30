@@ -89,38 +89,32 @@ final class UpdateController {
     private let releaseAPI = URL(string: "https://api.github.com/repos/noneandundefined/MaosVPN/releases/latest")!
     private let zipName = "MaosVPN-macOS-10.15-Intel.zip"
     private let checksumName = "SHA256SUMS.txt"
-    private let lastCheckKey = "lastUpdateCheckDate"
     private let session: URLSession
-    private let defaults: UserDefaults
     private let worker = DispatchQueue(label: "app.maosvpn.updater", qos: .userInitiated)
     private weak var presentingWindow: NSWindow?
     private let canInstall: () -> Bool
     private var isChecking = false
     private var isInstalling = false
     private var progressAlert: NSAlert?
+    private var presentedVersion: String?
 
     init(
         presentingWindow: NSWindow,
         session: URLSession = .shared,
-        defaults: UserDefaults = .standard,
         canInstall: @escaping () -> Bool
     ) {
         self.presentingWindow = presentingWindow
         self.session = session
-        self.defaults = defaults
         self.canInstall = canInstall
     }
 
     func checkAutomatically() {
-        if let lastCheck = defaults.object(forKey: lastCheckKey) as? Date,
-           Date().timeIntervalSince(lastCheck) < 6 * 60 * 60 {
-            return
-        }
         checkForUpdates(silent: true)
     }
 
     func checkForUpdates(silent: Bool) {
         guard !isChecking, !isInstalling else { return }
+        if !silent { presentedVersion = nil }
         isChecking = true
 
         var request = URLRequest(url: releaseAPI)
@@ -147,7 +141,6 @@ final class UpdateController {
                     return
                 }
 
-                self.defaults.set(Date(), forKey: self.lastCheckKey)
                 guard let current = AppVersion(self.currentVersionString),
                       let latest = AppVersion(release.tagName) else {
                     if !silent { self.showError(UpdateError.invalidVersion) }
@@ -168,6 +161,9 @@ final class UpdateController {
     }
 
     private func showAvailableUpdate(_ release: Release, version: String) {
+        guard presentedVersion != version else { return }
+        presentedVersion = version
+        NSApp.dockTile.badgeLabel = "↑"
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.alertStyle = .informational
@@ -188,6 +184,7 @@ final class UpdateController {
     }
 
     private func showUpToDate() {
+        NSApp.dockTile.badgeLabel = nil
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = AppLanguage.text(

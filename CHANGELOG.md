@@ -6,6 +6,10 @@ All notable user-facing changes will be documented here. The project follows sem
 
 ### Added
 
+- System light/dark appearance with live macOS theme changes.
+- Per-server latency results and automatic fastest-server selection.
+- Automatic update check on every launch and a Dock update badge.
+- Hidden persisted subscription URL with one-click refresh.
 - Native macOS 10.15+ Intel client.
 - Base64 and plain-text subscription import.
 - VLESS, VMess, Trojan, and Shadowsocks parsing.

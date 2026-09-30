@@ -3,10 +3,11 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
     private var updateController: UpdateController?
+    private var updateTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // A fixed light appearance keeps the UI predictable on Catalina and newer.
-        NSApp.appearance = NSAppearance(named: .aqua)
+        // nil follows the macOS system appearance and changes live with it.
+        NSApp.appearance = nil
         installMainMenu()
         NotificationCenter.default.addObserver(
             self,
@@ -40,6 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowController.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.updateController?.checkAutomatically()
+        }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
             self?.updateController?.checkAutomatically()
         }
     }
@@ -90,6 +94,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        updateTimer?.invalidate()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

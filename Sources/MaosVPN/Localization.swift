@@ -10,7 +10,9 @@ enum L10nKey {
     case operationInProgress, waitForOperation, okay
     case disconnectFailed, disconnectBeforeQuit, stay, quitAnyway
     case macOSVersion, serversHeading, serverColumn, yourVPN
-    case intro, subscriptionURL, load, addSubscription, serversWillAppear
+    case intro, subscriptionURL, subscriptionSaved, subscriptionPlaceholder, load, refresh
+    case addSubscription, serversWillAppear, testPing, autoSelect, testingPing
+    case pingFinished, fastestSelected, pingUnavailable
     case adminHint, loadingSubscription, subscriptionUpdated, languageChanged
     case disconnected, connecting, connected, disconnecting
     case connect, disconnect, serverSingular, serverFew, serverMany
@@ -45,9 +47,18 @@ enum L10n {
             case .yourVPN: return "Ваш VPN"
             case .intro: return "Вставьте ссылку подписки, выберите сервер и подключитесь."
             case .subscriptionURL: return "Ссылка подписки"
+            case .subscriptionSaved: return "Подписка сохранена — ссылка скрыта"
+            case .subscriptionPlaceholder: return "Вставьте новую ссылку, чтобы заменить сохранённую"
             case .load: return "Загрузить"
+            case .refresh: return "Обновить"
             case .addSubscription: return "Добавьте подписку"
             case .serversWillAppear: return "Серверы появятся в списке слева"
+            case .testPing: return "Пинг"
+            case .autoSelect: return "Автовыбор"
+            case .testingPing: return "Проверка задержки серверов…"
+            case .pingFinished: return "Проверка задержки завершена."
+            case .fastestSelected: return "Выбран самый быстрый сервер:"
+            case .pingUnavailable: return "Нет ответа"
             case .adminHint: return "При подключении macOS попросит пароль администратора — он нужен только для создания системного TUN-интерфейса."
             case .loadingSubscription: return "Загрузка подписки…"
             case .subscriptionUpdated: return "Подписка обновлена. Загружено серверов:"
@@ -91,9 +102,18 @@ enum L10n {
             case .yourVPN: return "Your VPN"
             case .intro: return "Paste a subscription URL, choose a server, and connect."
             case .subscriptionURL: return "Subscription URL"
+            case .subscriptionSaved: return "Subscription saved — URL hidden"
+            case .subscriptionPlaceholder: return "Paste a new URL to replace the saved one"
             case .load: return "Load"
+            case .refresh: return "Refresh"
             case .addSubscription: return "Add a subscription"
             case .serversWillAppear: return "Your servers will appear in the list"
+            case .testPing: return "Ping"
+            case .autoSelect: return "Auto-select"
+            case .testingPing: return "Testing server latency…"
+            case .pingFinished: return "Latency test finished."
+            case .fastestSelected: return "Fastest server selected:"
+            case .pingUnavailable: return "No response"
             case .adminHint: return "macOS will request an administrator password when connecting. It is used only to create the system TUN interface."
             case .loadingSubscription: return "Loading subscription…"
             case .subscriptionUpdated: return "Subscription updated. Servers loaded:"
