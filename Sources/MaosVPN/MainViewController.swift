@@ -697,8 +697,15 @@ private final class ThemedBackgroundView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
+        if #available(macOS 11.0, *) {
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer?.backgroundColor = fillColor.cgColor
+            }
+        } else {
+            let previousAppearance = NSAppearance.current
+            NSAppearance.current = effectiveAppearance
             layer?.backgroundColor = fillColor.cgColor
+            NSAppearance.current = previousAppearance
         }
     }
 
@@ -720,9 +727,17 @@ private final class ThemedCardView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
+        if #available(macOS 11.0, *) {
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+                layer?.borderColor = NSColor.separatorColor.cgColor
+            }
+        } else {
+            let previousAppearance = NSAppearance.current
+            NSAppearance.current = effectiveAppearance
             layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
             layer?.borderColor = NSColor.separatorColor.cgColor
+            NSAppearance.current = previousAppearance
         }
     }
 
