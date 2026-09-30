@@ -39,6 +39,7 @@ Requirements:
 - TCP, WebSocket, gRPC, HTTPUpgrade, TLS, and Reality options;
 - full-device TUN routing for browsers and applications;
 - local-only profile storage and no analytics;
+- automatic update notifications with verified one-click installation;
 - automated, validated GitHub Actions builds with checksums.
 
 ## Quick start

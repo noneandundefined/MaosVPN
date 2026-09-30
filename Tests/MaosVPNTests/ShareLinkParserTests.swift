@@ -2,6 +2,13 @@ import XCTest
 @testable import MaosVPNCore
 
 final class ShareLinkParserTests: XCTestCase {
+    func testSemanticVersionComparison() throws {
+        XCTAssertLessThan(try XCTUnwrap(AppVersion("v0.1.9")), try XCTUnwrap(AppVersion("0.2.0")))
+        XCTAssertLessThan(try XCTUnwrap(AppVersion("1.2.3")), try XCTUnwrap(AppVersion("1.10.0")))
+        XCTAssertEqual(try XCTUnwrap(AppVersion("v2.0")), try XCTUnwrap(AppVersion("2.0.0")))
+        XCTAssertNil(AppVersion("not-a-version"))
+    }
+
     func testLocalizedErrorsFollowSelectedLanguage() {
         let original = AppLanguage.current
         defer { AppLanguage.current = original }

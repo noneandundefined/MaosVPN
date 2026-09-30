@@ -33,6 +33,7 @@ chmod 755 "$APP_DIR/Contents/MacOS/MaosVPN" "$APP_DIR/Contents/Resources/sing-bo
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_DIR/Contents/Info.plist"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_DIR/Contents/Info.plist")" = "$APP_VERSION"
 
 ICONSET="$ROOT_DIR/.build/MaosVPN.iconset"
 rm -rf "$ICONSET"

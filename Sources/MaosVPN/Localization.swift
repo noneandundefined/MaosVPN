@@ -6,7 +6,7 @@ extension Notification.Name {
 }
 
 enum L10nKey {
-    case about, hide, quit, edit, undo, cut, copy, paste, selectAll
+    case about, checkForUpdates, hide, quit, edit, undo, cut, copy, paste, selectAll
     case operationInProgress, waitForOperation, okay
     case disconnectFailed, disconnectBeforeQuit, stay, quitAnyway
     case macOSVersion, serversHeading, serverColumn, yourVPN
@@ -23,6 +23,7 @@ enum L10n {
         case .russian:
             switch key {
             case .about: return "О Maos VPN"
+            case .checkForUpdates: return "Проверить обновления…"
             case .hide: return "Скрыть Maos VPN"
             case .quit: return "Завершить Maos VPN"
             case .edit: return "Правка"
@@ -68,6 +69,7 @@ enum L10n {
         case .english:
             switch key {
             case .about: return "About Maos VPN"
+            case .checkForUpdates: return "Check for Updates…"
             case .hide: return "Hide Maos VPN"
             case .quit: return "Quit Maos VPN"
             case .edit: return "Edit"

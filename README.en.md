@@ -4,6 +4,8 @@
 
 Maos VPN is a simple open-source subscription client for Intel Macs running macOS Catalina 10.15 or later. It uses a system TUN interface, so supported traffic from browsers and desktop applications is routed through the selected VPN server.
 
+The app checks GitHub Releases for updates at startup. When a new version is available, it can download, verify, install, and relaunch the update without opening a browser. You can also choose **Maos VPN → Check for Updates…** at any time.
+
 ## Installation
 
 1. Open **[GitHub Releases](../../releases/latest)**.

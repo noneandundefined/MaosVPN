@@ -2,6 +2,7 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
+    private var updateController: UpdateController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A fixed light appearance keeps the UI predictable on Catalina and newer.
@@ -28,8 +29,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let windowController = MainWindowController(window: window, vpnController: controller.vpnController)
         self.windowController = windowController
+        self.updateController = UpdateController(presentingWindow: window) {
+            switch controller.vpnController.state {
+            case .disconnected:
+                return true
+            case .connecting, .connected, .disconnecting:
+                return false
+            }
+        }
         windowController.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.updateController?.checkAutomatically()
+        }
     }
 
     private func installMainMenu() {
@@ -40,6 +52,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(applicationItem)
         let applicationMenu = NSMenu()
         applicationMenu.addItem(withTitle: L10n.text(.about), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let updateItem = NSMenuItem(
+            title: L10n.text(.checkForUpdates),
+            action: #selector(checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        updateItem.target = self
+        applicationMenu.addItem(updateItem)
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: L10n.text(.hide), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         applicationMenu.addItem(.separator())
@@ -63,6 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func languageDidChange(_ notification: Notification) {
         installMainMenu()
+    }
+
+    @objc private func checkForUpdates(_ sender: Any?) {
+        updateController?.checkForUpdates(silent: false)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

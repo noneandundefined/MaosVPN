@@ -45,10 +45,16 @@ jobs:
 
       - name: Build, test and package
         shell: bash
-        env:
-          APP_VERSION: "0.1.${{ github.run_number }}"
-          BUILD_NUMBER: "${{ github.run_number }}"
-        run: bash Scripts/package.sh "$CORE_PATH" .sing-box-license
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            app_version="${GITHUB_REF_NAME#v}"
+          else
+            app_version="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          APP_VERSION="$app_version" \
+            BUILD_NUMBER="$GITHUB_RUN_NUMBER" \
+            bash Scripts/package.sh "$CORE_PATH" .sing-box-license
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -85,6 +91,7 @@ jobs:
           - Native, minimal macOS interface
           - English and Russian languages with live switching
           - Profiles stored locally, with no analytics or tracking
+          - Automatic update notifications with checksum-verified installation
 
           ### Requirements
 
@@ -117,6 +124,7 @@ jobs:
           - Нативный минималистичный интерфейс macOS
           - Русский и английский языки с переключением без перезапуска
           - Локальное хранение профилей, без аналитики и отслеживания
+          - Автоматические уведомления и установка обновлений с проверкой SHA-256
 
           ### Требования
 

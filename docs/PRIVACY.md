@@ -21,10 +21,11 @@ The app contacts only:
 - the subscription URL entered by the user;
 - servers contained in that subscription;
 - DNS services configured for VPN operation.
+- the public GitHub Releases API and release download URLs to check for and install updates.
 
 When fetching a subscription, Maos VPN sends the random installation identifier in the `X-Hwid` header together with the operating system name/version and the generic device model `Mac`. This provides compatibility with Happ-style subscription panels. These values are sent only to the subscription URL entered by the user and are not sent to the Maos VPN project.
 
-GitHub is contacted only by a browser when the user visits project links. The installed app does not automatically contact this repository for updates.
+Automatic update checks send the app version and a generic Maos VPN User-Agent to GitHub. They do not include subscription URLs, profiles, the installation identifier, or VPN traffic. Automatic checks are limited to once every six hours; manual checks can be started from the application menu.
 
 ## Administrator password
 

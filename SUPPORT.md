@@ -33,6 +33,10 @@ Try another server, disable another VPN/filter temporarily, and confirm the prov
 
 This is expected. The independent `sing-box` process needs elevated permission to create and remove the system TUN interface and routes. Maos VPN never receives the password.
 
+### Automatic update fails
+
+Disconnect the VPN and run **Maos VPN → Check for Updates…** again. The app must be running from a writable local disk, not directly from the DMG. Update installation verifies the ZIP checksum, app identity, version, and code signature before replacing the current copy.
+
 ## Creating an issue
 
 Use the provided Bug Report form. Include the Maos VPN version, exact macOS version, Mac model, protocol type, and reproduction steps. Redact every credential.
@@ -44,5 +48,7 @@ Use the provided Bug Report form. Include the Maos VPN version, exact macOS vers
 Проверьте Intel‑архитектуру, macOS 10.15+, последнюю версию приложения и другой сервер из подписки. Временно отключите другие VPN, DNS-фильтры и прокси. Запрос пароля администратора при подключении является нормальным: он нужен для TUN-интерфейса.
 
 Если сервер подписки отклонил устройство, удалите неиспользуемое устройство в личном кабинете провайдера и загрузите подписку повторно. Maos VPN создаёт один случайный идентификатор установки и использует его при каждом обновлении.
+
+Если автоматическое обновление не устанавливается, отключите VPN и снова выберите **Maos VPN → Проверить обновления…**. Запускайте приложение из папки **Программы**, а не непосредственно из DMG.
 
 В Issue укажите версию Maos VPN, точную версию macOS, модель Mac, протокол и шаги. Не публикуйте ссылку подписки, UUID, пароль, ключи или полный лог.
