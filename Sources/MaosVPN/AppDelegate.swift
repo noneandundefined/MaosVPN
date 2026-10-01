@@ -2,6 +2,7 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
+    private var statusBarController: StatusBarController?
     private var updateController: UpdateController?
     private var updateTimer: Timer?
 
@@ -39,6 +40,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         windowController.showWindow(nil)
+        statusBarController = StatusBarController(
+            vpnController: controller.vpnController,
+            selectedProfile: { [weak controller] in controller?.profileForMenu() },
+            showWindow: { [weak controller] in controller?.showMainWindow() },
+            connect: { [weak controller] in controller?.connectSelectedServer() },
+            disconnect: { [weak controller] in controller?.disconnectSelectedServer() }
+        )
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.updateController?.checkAutomatically()
@@ -93,6 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        NSApp.activate(ignoringOtherApps: true)
+        windowController?.showWindow(nil)
         return true
     }
 

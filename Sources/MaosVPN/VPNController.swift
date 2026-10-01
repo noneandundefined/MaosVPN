@@ -10,16 +10,17 @@ final class VPNController {
         case disconnecting
     }
 
-    private(set) var state: State = .disconnected {
-        didSet {
-            let currentState = state
-            DispatchQueue.main.async { [weak self] in self?.onStateChange?(currentState) }
-        }
+    private let stateQueue = DispatchQueue(label: "app.maosvpn.state")
+    private var storedState: State = .disconnected
+    private(set) var state: State {
+        get { stateQueue.sync { storedState } }
+        set { setState(newValue) }
     }
     var onStateChange: ((State) -> Void)?
     var onLog: ((String) -> Void)?
 
     private let worker = DispatchQueue(label: "app.maosvpn.controller", qos: .userInitiated)
+    private let helper = PrivilegedHelperClient()
     private let defaults = UserDefaults.standard
     private let pidKey = "activeSingBoxPID"
 
@@ -29,7 +30,29 @@ final class VPNController {
     }
 
     init() {
-        if isConnected { state = .connected }
+        if isConnected { storedState = .connected }
+    }
+
+    /// Clears a stale "connected" state after sing-box has already exited.
+    func noteProcessIfExited() -> Bool {
+        guard state == .connected, let pid = savedPID, !processExists(pid) else { return false }
+        savedPID = nil
+        state = .disconnected
+        return true
+    }
+
+    private func setState(_ newValue: State) {
+        let changed = stateQueue.sync { () -> Bool in
+            guard storedState != newValue else { return false }
+            storedState = newValue
+            return true
+        }
+        guard changed else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.onStateChange?(newValue)
+            NotificationCenter.default.post(name: .maosVPNConnectionStateDidChange, object: self)
+        }
     }
 
     func connect(profile: VPNProfile, completion: @escaping (Error?) -> Void) {
@@ -37,7 +60,10 @@ final class VPNController {
             savedPID = nil
             state = .disconnected
         }
-        guard state == .disconnected else { return }
+        guard state == .disconnected else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
         state = .connecting
 
         worker.async { [weak self] in
@@ -52,19 +78,11 @@ final class VPNController {
                 let configURL = try self.writeConfig(for: profile)
                 try self.validate(coreURL: coreURL, configURL: configURL)
 
-                let logURL = self.logURL()
-                // Catalina's /usr/bin/nohup can fail with TIOCNOTTY when it is
-                // launched through `osascript ... with administrator privileges`.
-                // Closing stdin and redirecting both output streams lets the
-                // non-interactive shell release the background process safely.
-                let command = "\(self.shellQuote(coreURL.path)) run -c \(self.shellQuote(configURL.path)) < /dev/null > \(self.shellQuote(logURL.path)) 2>&1 & echo $!"
-                let output = try self.runPrivileged(command)
-                guard let pid = Int32(output.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 1 else {
-                    throw MaosVPNError.processDidNotStart(output)
-                }
+                let pid = try self.helper.start(configURL: configURL)
                 self.savedPID = pid
                 Thread.sleep(forTimeInterval: 0.8)
                 guard self.isManagedProcess(pid) else {
+                    try? self.helper.stop(pid: pid)
                     self.savedPID = nil
                     throw MaosVPNError.processDidNotStart(self.readLogTail())
                 }
@@ -80,6 +98,10 @@ final class VPNController {
     }
 
     func disconnect(completion: @escaping (Error?) -> Void) {
+        if state == .connecting || state == .disconnecting {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
         guard state == .connected || isConnected else {
             state = .disconnected
             completion(nil)
@@ -103,9 +125,8 @@ final class VPNController {
 
     func stopSynchronously() throws {
         guard let pid = savedPID else { return }
-        if processExists(pid) && isManagedProcess(pid) {
-            // Only a numeric PID created and persisted by this app is interpolated here.
-            _ = try runPrivileged("kill -TERM \(pid); for i in 1 2 3 4 5; do kill -0 \(pid) 2>/dev/null || exit 0; sleep 1; done; kill -KILL \(pid) 2>/dev/null || true")
+        if processExists(pid) {
+            try helper.stop(pid: pid)
         }
         savedPID = nil
     }
@@ -142,25 +163,6 @@ final class VPNController {
             let message = String(data: data, encoding: .utf8) ?? "\(L10n.text(.exitCode)) \(process.terminationStatus)"
             throw MaosVPNError.invalidConfiguration(message.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-    }
-
-    private func runPrivileged(_ shellCommand: String) throws -> String {
-        let process = Process()
-        let output = Pipe()
-        let error = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", "do shell script \(appleScriptString(shellCommand)) with administrator privileges"]
-        process.standardOutput = output
-        process.standardError = error
-        try process.run()
-        process.waitUntilExit()
-
-        let stdout = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        guard process.terminationStatus == 0 else {
-            throw MaosVPNError.privilegeHelper(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        return stdout
     }
 
     private func applicationSupportDirectory() throws -> URL {
@@ -207,7 +209,8 @@ final class VPNController {
         guard process.terminationStatus == 0 else { return false }
         let data = output.fileHandleForReading.readDataToEndOfFile()
         let command = String(data: data, encoding: .utf8) ?? ""
-        return command.contains("sing-box") && command.contains("MaosVPN/config.json")
+        return command.contains("app.maosvpn.sing-box")
+            || (command.contains("sing-box") && command.contains("MaosVPN/config.json"))
     }
 
     private var savedPID: Int32? {
@@ -222,18 +225,6 @@ final class VPNController {
                 defaults.removeObject(forKey: pidKey)
             }
         }
-    }
-
-    private func shellQuote(_ value: String) -> String {
-        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    private func appleScriptString(_ value: String) -> String {
-        let escaped = value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        return "\"\(escaped)\""
     }
 
     private func emitLog(_ value: String) {

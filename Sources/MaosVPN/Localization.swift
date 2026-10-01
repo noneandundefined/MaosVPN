@@ -3,6 +3,7 @@ import MaosVPNCore
 
 extension Notification.Name {
     static let maosVPNLanguageDidChange = Notification.Name("MaosVPNLanguageDidChange")
+    static let maosVPNConnectionStateDidChange = Notification.Name("MaosVPNConnectionStateDidChange")
 }
 
 enum L10nKey {
@@ -15,7 +16,7 @@ enum L10nKey {
     case pingFinished, fastestSelected, pingUnavailable
     case adminHint, loadingSubscription, subscriptionUpdated, languageChanged
     case disconnected, connecting, connected, disconnecting
-    case connect, disconnect, serverSingular, serverFew, serverMany
+    case connect, disconnect, openWindow, serverSingular, serverFew, serverMany
     case vpnConnected, vpnDisconnected, exitCode, logUnavailable
 }
 
@@ -59,7 +60,7 @@ enum L10n {
             case .pingFinished: return "Проверка задержки завершена."
             case .fastestSelected: return "Выбран самый быстрый сервер:"
             case .pingUnavailable: return "Нет ответа"
-            case .adminHint: return "При подключении macOS попросит пароль администратора — он нужен только для создания системного TUN-интерфейса."
+            case .adminHint: return "Пароль администратора нужен один раз, чтобы установить службу VPN. Дальше подключение и отключение проходят без пароля."
             case .loadingSubscription: return "Загрузка подписки…"
             case .subscriptionUpdated: return "Подписка обновлена. Загружено серверов:"
             case .languageChanged: return "Язык интерфейса изменён."
@@ -67,8 +68,9 @@ enum L10n {
             case .connecting: return "Подключение…"
             case .connected: return "VPN включён"
             case .disconnecting: return "Отключение…"
-            case .connect: return "Подключиться"
-            case .disconnect: return "Отключиться"
+            case .connect: return "Подключиться к VPN"
+            case .disconnect: return "Отключиться от VPN"
+            case .openWindow: return "Открыть Maos VPN"
             case .serverSingular: return "сервер"
             case .serverFew: return "сервера"
             case .serverMany: return "серверов"
@@ -114,7 +116,7 @@ enum L10n {
             case .pingFinished: return "Latency test finished."
             case .fastestSelected: return "Fastest server selected:"
             case .pingUnavailable: return "No response"
-            case .adminHint: return "macOS will request an administrator password when connecting. It is used only to create the system TUN interface."
+            case .adminHint: return "An administrator password is required once to install the VPN helper. Connecting and disconnecting after that does not ask for it."
             case .loadingSubscription: return "Loading subscription…"
             case .subscriptionUpdated: return "Subscription updated. Servers loaded:"
             case .languageChanged: return "Interface language changed."
@@ -122,8 +124,9 @@ enum L10n {
             case .connecting: return "Connecting…"
             case .connected: return "VPN enabled"
             case .disconnecting: return "Disconnecting…"
-            case .connect: return "Connect"
-            case .disconnect: return "Disconnect"
+            case .connect: return "Connect to VPN"
+            case .disconnect: return "Disconnect from VPN"
+            case .openWindow: return "Open Maos VPN"
             case .serverSingular, .serverFew, .serverMany: return "servers"
             case .vpnConnected: return "VPN connected:"
             case .vpnDisconnected: return "VPN disconnected"

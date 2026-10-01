@@ -600,9 +600,36 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     @objc private func toggleConnection() {
         if vpnController.isConnected {
-            vpnController.disconnect { [weak self] error in if let error = error { self?.showError(error) } }
-        } else if let profile = selectedProfile {
-            vpnController.connect(profile: profile) { [weak self] error in if let error = error { self?.showError(error) } }
+            disconnectSelectedServer()
+        } else {
+            connectSelectedServer()
+        }
+    }
+
+    func profileForMenu() -> VPNProfile? {
+        selectedProfile
+    }
+
+    func showMainWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        view.window?.makeKeyAndOrderFront(nil)
+    }
+
+    func connectSelectedServer() {
+        guard vpnController.state == .disconnected else { return }
+        guard let profile = selectedProfile else {
+            showMainWindow()
+            return
+        }
+        vpnController.connect(profile: profile) { [weak self] error in
+            if let error = error { self?.showError(error) }
+        }
+    }
+
+    func disconnectSelectedServer() {
+        guard vpnController.state == .connected || vpnController.isConnected else { return }
+        vpnController.disconnect { [weak self] error in
+            if let error = error { self?.showError(error) }
         }
     }
 
@@ -689,7 +716,9 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private func startConnectionTimer() {
         guard connectionTimer == nil else { return }
         connectionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self = self, self.vpnController.state == .connected else { return }
+            guard let self = self else { return }
+            if self.vpnController.noteProcessIfExited() { return }
+            guard self.vpnController.state == .connected else { return }
             self.connectionSubtitleLabel.stringValue = self.connectedSubtitle()
         }
     }
@@ -957,6 +986,13 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private func showError(_ error: Error) {
         showStatus(error.localizedDescription, color: .systemRed)
         NSSound.beep()
+        guard view.window?.isVisible != true else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = AppLanguage.text(russian: "Не удалось изменить VPN", english: "Could not change the VPN")
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: L10n.text(.okay))
+        alert.runModal()
     }
 }
 
