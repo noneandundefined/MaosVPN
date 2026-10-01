@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" width="128" height="128" alt="Maos VPN logo">
+  <img src="Resources/AppIcon.png" width="128" height="128" alt="Maos VPN app icon">
 </p>
 
 <h1 align="center">Maos VPN</h1>

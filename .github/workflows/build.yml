@@ -101,6 +101,7 @@ jobs:
 
           ### Highlights
 
+          - New glossy blue Maos VPN icon throughout the app and documentation
           - Polished macOS-style dashboard with server search, a dotted world map, connection glow, and server/protocol cards
           - Import servers from a subscription URL in one click
           - Multiple named, collapsible subscription groups and direct JSON import

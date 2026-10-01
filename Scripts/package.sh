@@ -37,7 +37,8 @@ test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_DIR
 
 ICONSET="$ROOT_DIR/.build/MaosVPN.iconset"
 rm -rf "$ICONSET"
-swift "$ROOT_DIR/Scripts/generate_icon.swift" "$ICONSET"
+test -s "$ROOT_DIR/Resources/AppIcon.png"
+swift "$ROOT_DIR/Scripts/generate_icon.swift" "$ROOT_DIR/Resources/AppIcon.png" "$ICONSET"
 
 for icon in \
   icon_16x16.png icon_16x16@2x.png \

@@ -4,6 +4,10 @@ All notable user-facing changes will be documented here. The project follows sem
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced the previous logo with the new glossy blue Maos VPN icon across the app, package, and documentation.
+
 ### Fixed
 
 - Disconnecting tolerates an already exited VPN process, reaps the root core correctly, and never triggers helper reinstallation or another password prompt.

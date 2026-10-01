@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Resources/AppIcon.png" width="112" height="112" alt="Maos VPN app icon">
+</p>
+
 # Maos VPN — User Guide
 
 [Русская версия](README.ru.md) · [Project overview](README.md) · [Download latest release](../../releases/latest)

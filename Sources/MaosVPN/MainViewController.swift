@@ -136,6 +136,9 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     private func buildOnboardingInterface() {
         configureLanguagePopup()
+        let brandIcon = NSImageView()
+        brandIcon.image = NSApp.applicationIconImage
+        brandIcon.imageScaling = .scaleProportionallyUpOrDown
         let title = NSTextField(labelWithString: AppLanguage.text(
             russian: "Добавьте первую подписку",
             english: "Add your first subscription"
@@ -163,13 +166,17 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         messageLabel.alignment = .center
         messageLabel.maximumNumberOfLines = 3
         messageLabel.preferredMaxLayoutWidth = 420
-        [languagePopup, title, subtitle, onboardingURLField, onboardingAddButton, progress, messageLabel].forEach {
+        [languagePopup, brandIcon, title, subtitle, onboardingURLField, onboardingAddButton, progress, messageLabel].forEach {
             view.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
         NSLayoutConstraint.activate([
             languagePopup.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
             languagePopup.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            brandIcon.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            brandIcon.bottomAnchor.constraint(equalTo: title.topAnchor, constant: -10),
+            brandIcon.widthAnchor.constraint(equalToConstant: 64),
+            brandIcon.heightAnchor.constraint(equalToConstant: 64),
             title.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             title.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -70),
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
@@ -226,6 +233,9 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     private func makeHeader() -> NSView {
         let container = NSView()
+        let brandIcon = NSImageView()
+        brandIcon.image = NSApp.applicationIconImage
+        brandIcon.imageScaling = .scaleProportionallyUpOrDown
         searchField.placeholderString = AppLanguage.text(russian: "Поиск стран или городов...", english: "Search countries or cities...")
         searchField.stringValue = searchQuery
         searchField.target = self
@@ -243,14 +253,18 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         progress.isDisplayedWhenStopped = false
         let divider = NSBox()
         divider.boxType = .separator
-        [searchField, progress, languagePopup, addSubscriptionButton, divider].forEach {
+        [brandIcon, searchField, progress, languagePopup, addSubscriptionButton, divider].forEach {
             container.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
         NSLayoutConstraint.activate([
-            searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            brandIcon.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            brandIcon.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            brandIcon.widthAnchor.constraint(equalToConstant: 24),
+            brandIcon.heightAnchor.constraint(equalToConstant: 24),
+            searchField.leadingAnchor.constraint(equalTo: brandIcon.trailingAnchor, constant: 6),
             searchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            searchField.widthAnchor.constraint(equalToConstant: 200),
+            searchField.widthAnchor.constraint(equalToConstant: 180),
             progress.leadingAnchor.constraint(equalTo: searchField.trailingAnchor, constant: 6),
             progress.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             languagePopup.trailingAnchor.constraint(equalTo: addSubscriptionButton.leadingAnchor, constant: -8),
