@@ -29,7 +29,7 @@ Automatic update checks send the app version and a generic Maos VPN User-Agent t
 
 ## Administrator password
 
-The password prompt is presented and processed by macOS. Maos VPN receives only the success or failure result and never receives or stores the password.
+The password prompt is presented and processed by macOS when the privileged VPN helper is first installed or updated. Maos VPN receives only the success or failure result and never receives or stores the password. Routine connections and disconnections use the installed helper and do not request the password again.
 
 ## Removal
 

@@ -53,9 +53,9 @@ Requirements:
 4. Paste your first subscription URL and click **Add subscription**.
 5. Use the **+** button to add more subscription URLs or sing-box JSON configurations.
 6. Open a subscription group, select a server, and click the round **Connect** button.
-7. Approve the macOS administrator prompt used to create the TUN interface.
+7. Approve the one-time macOS administrator prompt used to install the VPN helper.
 
-The administrator password is handled by macOS and is never received or stored by Maos VPN.
+The administrator password is handled by macOS and is never received or stored by Maos VPN. Normal connections and disconnections do not ask for it again.
 
 ## Documentation
 

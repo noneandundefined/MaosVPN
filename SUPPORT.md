@@ -31,7 +31,7 @@ Try another server, disable another VPN/filter temporarily, and confirm the prov
 
 ### Administrator prompt appears
 
-This is expected. The independent `sing-box` process needs elevated permission to create and remove the system TUN interface and routes. Maos VPN never receives the password.
+The prompt is expected once when Maos VPN installs or updates its small privileged helper. After that, connecting and disconnecting do not require a password. Maos VPN never receives or stores the password. If the prompt appears on every connection, install the latest release and restart macOS once.
 
 ### Automatic update fails
 
@@ -45,7 +45,7 @@ Use the provided Bug Report form. Include the Maos VPN version, exact macOS vers
 
 ## Кратко на русском
 
-Проверьте Intel‑архитектуру, macOS 10.15+, последнюю версию приложения и другой сервер из подписки. Временно отключите другие VPN, DNS-фильтры и прокси. Запрос пароля администратора при подключении является нормальным: он нужен для TUN-интерфейса.
+Проверьте Intel‑архитектуру, macOS 10.15+, последнюю версию приложения и другой сервер из подписки. Временно отключите другие VPN, DNS-фильтры и прокси. Пароль администратора требуется один раз для установки или обновления служебного helper. После этого подключение и отключение выполняются без пароля. Если запрос появляется каждый раз, установите последний релиз и один раз перезагрузите macOS.
 
 Если сервер подписки отклонил устройство, удалите неиспользуемое устройство в личном кабинете провайдера и загрузите подписку повторно. Maos VPN создаёт один случайный идентификатор установки и использует его при каждом обновлении.
 

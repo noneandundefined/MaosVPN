@@ -127,9 +127,9 @@ jobs:
           2. Open the DMG and drag **Maos VPN.app** into **Applications**.
           3. On first launch, right-click the app and choose **Open**.
           4. Paste your subscription URL, load the servers, select one, and connect.
-          5. Approve the macOS administrator prompt required to create the TUN interface.
+          5. Approve the one-time macOS administrator prompt required to install the VPN helper.
 
-          The public build uses ad-hoc signing, so macOS may ask for additional confirmation on the first launch. The administrator password is handled by macOS and is never received or stored by Maos VPN.
+          The public build uses ad-hoc signing, so macOS may ask for additional confirmation on the first launch. The administrator password is handled by macOS and is never received or stored by Maos VPN. Routine connections and disconnections do not ask for it again.
 
           ---
 
@@ -165,9 +165,9 @@ jobs:
           2. Откройте DMG и перетащите **Maos VPN.app** в папку **Программы**.
           3. При первом запуске нажмите приложение правой кнопкой и выберите **Открыть**.
           4. Вставьте ссылку подписки, загрузите серверы, выберите сервер и подключитесь.
-          5. Подтвердите системный запрос администратора для создания TUN-интерфейса.
+          5. Один раз подтвердите системный запрос администратора для установки служебного VPN-helper.
 
-          Публичная сборка подписана ad-hoc, поэтому при первом запуске macOS может запросить дополнительное подтверждение. Пароль администратора обрабатывается самой macOS — приложение его не получает и не сохраняет.
+          Публичная сборка подписана ad-hoc, поэтому при первом запуске macOS может запросить дополнительное подтверждение. Пароль администратора обрабатывается самой macOS — приложение его не получает и не сохраняет. Обычное подключение и отключение больше не запрашивают пароль.
 
           ---
 

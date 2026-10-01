@@ -4,6 +4,10 @@ All notable user-facing changes will be documented here. The project follows sem
 
 ## [Unreleased]
 
+### Fixed
+
+- Disconnecting tolerates an already exited VPN process, reaps the root core correctly, and never triggers helper reinstallation or another password prompt.
+
 ### Added
 
 - Polished macOS-style connection dashboard with server search, a dotted world map, connection glow, and compact server/protocol cards.

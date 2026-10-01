@@ -125,8 +125,20 @@ final class VPNController {
 
     func stopSynchronously() throws {
         guard let pid = savedPID else { return }
-        if processExists(pid) {
+        guard processExists(pid) else {
+            savedPID = nil
+            return
+        }
+        do {
             try helper.stop(pid: pid)
+        } catch {
+            // The core can exit between the local PID check and the helper
+            // request. An already exited/non-managed process is disconnected.
+            guard isManagedProcess(pid) else {
+                savedPID = nil
+                return
+            }
+            throw error
         }
         savedPID = nil
     }

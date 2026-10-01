@@ -73,7 +73,20 @@ enum PrivilegedHelperServer {
                 reply(client, "ERR\tbad-request")
                 return
             }
-            if kill(pid, 0) == 0 && !isManagedCore(pid) {
+            if kill(pid, 0) != 0 {
+                if errno == ESRCH {
+                    reply(client, "OK")
+                } else {
+                    reply(client, "ERR\tstop-failed")
+                }
+                return
+            }
+            if !isManagedCore(pid) {
+                var status: Int32 = 0
+                if waitpid(pid, &status, WNOHANG) == pid {
+                    reply(client, "OK")
+                    return
+                }
                 reply(client, "ERR\tnot-our-process")
                 return
             }
@@ -101,16 +114,29 @@ enum PrivilegedHelperServer {
     }
 
     private static func stop(_ pid: pid_t) {
-        if kill(pid, 0) != 0 { return }
+        if processHasExited(pid) { return }
         guard isManagedCore(pid) else { return }
         _ = kill(pid, SIGTERM)
         for _ in 0..<50 {
-            if kill(pid, 0) != 0 { return }
+            if processHasExited(pid) { return }
             usleep(100_000)
         }
         if isManagedCore(pid) {
             _ = kill(pid, SIGKILL)
+            for _ in 0..<20 {
+                if processHasExited(pid) { return }
+                usleep(100_000)
+            }
         }
+    }
+
+    /// Reaps a core started by this helper. Without waitpid, a terminated core
+    /// remains a zombie and kill(pid, 0) incorrectly reports that it still exists.
+    private static func processHasExited(_ pid: pid_t) -> Bool {
+        var status: Int32 = 0
+        if waitpid(pid, &status, WNOHANG) == pid { return true }
+        if kill(pid, 0) == 0 { return false }
+        return errno == ESRCH
     }
 
     private static func verifiedConfigPath(_ path: String, uid: uid_t) throws -> String {
@@ -289,8 +315,28 @@ final class PrivilegedHelperClient {
     }
 
     func stop(pid: Int32) throws {
-        let response = try exchange("STOP\t\(pid)")
-        guard response == "OK" else { throw failed(response) }
+        try lock.locked {
+            let request = "STOP\t\(pid)"
+            var lastUnavailable = false
+            for attempt in 0..<16 {
+                do {
+                    let response = try roundTrip(request)
+                    let normalized = response.lowercased()
+                    if response == "OK"
+                        || normalized.contains("no-process")
+                        || normalized.contains("no such process")
+                        || normalized.contains("esrch") {
+                        return
+                    }
+                    throw failed(response)
+                } catch is HelperUnavailable {
+                    lastUnavailable = true
+                    if !processExists(pid) { return }
+                    if attempt < 15 { Thread.sleep(forTimeInterval: 0.2) }
+                }
+            }
+            if lastUnavailable { throw helperDown() }
+        }
     }
 
     private func exchange(_ line: String) throws -> String {
@@ -322,7 +368,7 @@ final class PrivilegedHelperClient {
         let core = try bundledCore()
         let fingerprint = try "\(sha256FileOrThrow(executable)):\(sha256FileOrThrow(core))"
         if readyFingerprint == fingerprint { return }
-        if let status = try? statusLine(), status == "OK\t" + fingerprint.replacingOccurrences(of: ":", with: "\t") {
+        if waitForInstalledHelper(fingerprint: fingerprint, timeout: 1.6) {
             readyFingerprint = fingerprint
             return
         }
@@ -368,6 +414,23 @@ final class PrivilegedHelperClient {
         try roundTrip("STATUS")
     }
 
+    /// launchd may be restarting an already installed helper. Waiting briefly
+    /// avoids showing an unnecessary administrator prompt during that window.
+    private func waitForInstalledHelper(fingerprint: String, timeout: TimeInterval) -> Bool {
+        let expected = "OK\t" + fingerprint.replacingOccurrences(of: ":", with: "\t")
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            do {
+                return try statusLine() == expected
+            } catch is HelperUnavailable {
+                if Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+            } catch {
+                return false
+            }
+        } while Date() < deadline
+        return false
+    }
+
     private func roundTrip(_ line: String) throws -> String {
         guard var address = unixAddress(helperSocketPath) else {
             throw failed("bad-socket")
@@ -403,8 +466,12 @@ final class PrivilegedHelperClient {
         guard let response = String(bytes: bytes, encoding: .utf8), !response.isEmpty else {
             throw HelperUnavailable()
         }
-        if response.hasPrefix("ERR") { throw failed(response) }
         return response
+    }
+
+    private func processExists(_ pid: Int32) -> Bool {
+        if kill(pid, 0) == 0 { return true }
+        return errno == EPERM
     }
 
     private func bundleExecutable() throws -> URL {

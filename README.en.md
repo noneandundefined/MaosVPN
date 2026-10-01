@@ -31,9 +31,9 @@ Only run this command for an app downloaded from this project's official Release
 4. Use **Add subscription** in the toolbar to add more named subscription URLs or sing-box JSON configurations.
 5. Expand a subscription group and select a server in the sidebar.
 6. Use server search, **Ping test**, or **Auto select**, then click the large round connection control. While connected, it displays the session duration.
-7. Enter your macOS administrator password when the system asks.
+7. Enter your macOS administrator password once when the helper installation prompt appears.
 
-The prompt authorizes creation of a TUN interface. Maos VPN does not see or save the password.
+The prompt installs the privileged VPN helper. Maos VPN does not see or save the password, and routine connections and disconnections do not ask for it again.
 
 ## Supported formats
 
