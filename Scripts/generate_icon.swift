@@ -26,6 +26,7 @@ let variants: [(String, Int)] = [
 
 enum IconGeneratorError: LocalizedError {
     case source(URL)
+    case sourceSize(width: Int, height: Int)
     case thumbnail(Int)
     case invalidSize(expected: Int, width: Int, height: Int)
     case destination(URL)
@@ -35,6 +36,8 @@ enum IconGeneratorError: LocalizedError {
         switch self {
         case .source(let url):
             return "Could not read the source icon at \(url.path)"
+        case .sourceSize(let width, let height):
+            return "Source icon is \(width)x\(height), expected 1024x1024"
         case .thumbnail(let size):
             return "Could not render the \(size)x\(size) icon"
         case .invalidSize(let expected, let width, let height):
@@ -77,6 +80,12 @@ func writeIcon(source: CGImageSource, size: Int, to url: URL) throws {
 do {
     guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else {
         throw IconGeneratorError.source(sourceURL)
+    }
+    guard let master = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        throw IconGeneratorError.source(sourceURL)
+    }
+    guard master.width == 1024, master.height == 1024 else {
+        throw IconGeneratorError.sourceSize(width: master.width, height: master.height)
     }
     try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
     for (name, size) in variants {

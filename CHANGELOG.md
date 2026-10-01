@@ -7,6 +7,7 @@ All notable user-facing changes will be documented here. The project follows sem
 ### Changed
 
 - Replaced the previous logo with the new glossy blue Maos VPN icon across the app, package, and documentation.
+- Fitted the icon artwork to a 1024×1024 master with balanced Dock and Finder sizing.
 
 ### Fixed
 

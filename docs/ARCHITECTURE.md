@@ -22,7 +22,7 @@ MaosVPNCore parser ──► VPNProfile list ──► AppKit server list
 
 - `MaosVPNCore`: share-link parsing, models, bilingual errors, and sing-box configuration generation.
 - `MaosVPN`: AppKit user interface, preferences, privileged lifecycle, process validation, and localization.
-- `Scripts`: iconset generation from `Resources/AppIcon.png` and deterministic app/DMG packaging.
+- `Scripts`: standard 16–1024 px iconset generation from the validated 1024×1024 `Resources/AppIcon.png` master, plus deterministic app/DMG packaging.
 - `Tests`: parser tests and an engine-validated configuration fixture.
 
 ## Privilege boundary
