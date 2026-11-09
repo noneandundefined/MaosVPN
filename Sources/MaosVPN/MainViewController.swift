@@ -665,9 +665,11 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     func profileForMenu() -> VPNProfile? {
-        // Status bar uses this to enable the Connect action. The actual automatic
-        // endpoint is selected by sing-box and is deliberately not guessed here.
-        selectedProfile ?? (isAutomaticSelected ? allProfiles.first : nil)
+        selectedProfile
+    }
+
+    func automaticSelectionForMenu() -> Bool {
+        isAutomaticSelected
     }
 
     func showMainWindow() {
