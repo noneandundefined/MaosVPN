@@ -12,6 +12,7 @@ final class SubscriptionEntry: NSObject, Codable {
     let sourceKind: SubscriptionSourceKind
     let source: String
     var profiles: [VPNProfile]
+    var metadata: SubscriptionMetadata?
     private(set) var profileNodes: [ProfileNode] = []
 
     init(
@@ -19,19 +20,21 @@ final class SubscriptionEntry: NSObject, Codable {
         name: String,
         sourceKind: SubscriptionSourceKind,
         source: String,
-        profiles: [VPNProfile]
+        profiles: [VPNProfile],
+        metadata: SubscriptionMetadata? = nil
     ) {
         self.id = id
         self.name = name
         self.sourceKind = sourceKind
         self.source = source
         self.profiles = profiles
+        self.metadata = metadata
         super.init()
         rebuildNodes()
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, sourceKind, source, profiles
+        case id, name, sourceKind, source, profiles, metadata
     }
 
     required init(from decoder: Decoder) throws {
@@ -41,6 +44,7 @@ final class SubscriptionEntry: NSObject, Codable {
         sourceKind = try container.decode(SubscriptionSourceKind.self, forKey: .sourceKind)
         source = try container.decode(String.self, forKey: .source)
         profiles = try container.decode([VPNProfile].self, forKey: .profiles)
+        metadata = try container.decodeIfPresent(SubscriptionMetadata.self, forKey: .metadata)
         super.init()
         rebuildNodes()
     }
@@ -52,9 +56,11 @@ final class SubscriptionEntry: NSObject, Codable {
         try container.encode(sourceKind, forKey: .sourceKind)
         try container.encode(source, forKey: .source)
         try container.encode(profiles, forKey: .profiles)
+        try container.encodeIfPresent(metadata, forKey: .metadata)
     }
 
-    func replaceProfiles(_ profiles: [VPNProfile]) {
+    func replaceProfiles(_ profiles: [VPNProfile], metadata: SubscriptionMetadata? = nil) {
+        self.metadata = metadata
         // Keep the UUID of each unchanged endpoint so a refresh does not lose
         // the current selection or its latency result.
         var unmatched = self.profiles
