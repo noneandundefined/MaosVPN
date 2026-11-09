@@ -619,13 +619,14 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         }
         setSubscriptionBusy(true)
         showStatus(L10n.text(.loadingSubscription))
-        subscriptionService.load(from: url) { [weak self] result in
+        subscriptionService.loadWithMetadata(from: url) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.setSubscriptionBusy(false)
                 switch result {
-                case .success(let profiles):
-                    self.finishAddingSubscription(name: name, kind: .remote, source: source, profiles: profiles)
+                case .success(let payload):
+                    self.finishAddingSubscription(name: name, kind: .remote, source: source,
+                                                  profiles: payload.profiles, metadata: payload.metadata)
                 case .failure(let error): self.showError(error)
                 }
             }
@@ -650,8 +651,10 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         }
     }
 
-    private func finishAddingSubscription(name: String, kind: SubscriptionSourceKind, source: String, profiles: [VPNProfile]) {
-        let entry = SubscriptionEntry(name: name, sourceKind: kind, source: source, profiles: profiles)
+    private func finishAddingSubscription(name: String, kind: SubscriptionSourceKind, source: String,
+                                          profiles: [VPNProfile], metadata: SubscriptionMetadata? = nil) {
+        let entry = SubscriptionEntry(name: name, sourceKind: kind, source: source,
+                                      profiles: profiles, metadata: metadata)
         subscriptions.append(entry)
         persistLibrary()
         latencyByProfileID.removeAll()
@@ -1017,21 +1020,23 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         let priorSelectionID = selectedProfile?.id
         setSubscriptionBusy(true)
         showStatus(AppLanguage.text(russian: "Обновляем подписку…", english: "Refreshing subscription…"))
-        subscriptionService.load(from: url) { [weak self] result in
+        subscriptionService.loadWithMetadata(from: url) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.setSubscriptionBusy(false)
                 switch result {
                 case .failure(let error):
                     self.showError(error)
-                case .success(let profiles):
+                case .success(let payload):
+                    let profiles = payload.profiles
                     guard self.subscriptions.contains(where: { $0.id == id }) else { return }
-                    subscription.replaceProfiles(profiles)
+                    subscription.replaceProfiles(profiles, metadata: payload.metadata)
                     let ids = Set(self.allProfiles.map(\.id))
                     self.latencyByProfileID = self.latencyByProfileID.filter { ids.contains($0.key) }
                     self.persistLibrary()
                     self.buildCurrentInterface()
-                    if let priorID = priorSelectionID,
+                    if self.vpnController.state == .disconnected,
+                       let priorID = priorSelectionID,
                        let node = subscription.profileNodes.first(where: { $0.profile.id == priorID }) {
                         self.select(node: node)
                     }
@@ -1040,7 +1045,13 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
                         russian: "Подписка обновлена: \(profiles.count) серверов (изменение: \(delta >= 0 ? "+" : "")\(delta)).",
                         english: "Subscription refreshed: \(profiles.count) servers (change: \(delta >= 0 ? "+" : "")\(delta))."
                     )
-                    self.showStatus(message)
+                    let note = self.vpnController.state == .connected
+                        ? AppLanguage.text(
+                            russian: " Новые серверы будут доступны после переподключения VPN.",
+                            english: " New servers will be active after the next VPN connection."
+                        )
+                        : ""
+                    self.showStatus(message + note)
                 }
             }
         }
@@ -1052,31 +1063,60 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
               let subscription = subscriptions.first(where: { $0.id == id }),
               let window = view.window else { return }
 
+        let mustDisconnect = subscriptions.count == 1 && vpnController.state == .connected
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = AppLanguage.text(russian: "Удалить подписку?", english: "Delete subscription?")
-        alert.informativeText = AppLanguage.text(
+        let base = AppLanguage.text(
             russian: "«\(subscription.name)» и её серверы будут удалены только из приложения.",
             english: "“\(subscription.name)” and its servers will only be removed from this app."
         )
+        let note = mustDisconnect
+            ? AppLanguage.text(
+                russian: "\nЭто последняя подписка. Перед удалением VPN будет отключён.",
+                english: "\nThis is your last subscription. VPN will disconnect before it is removed."
+            )
+            : ""
+        alert.informativeText = base + note
         alert.addButton(withTitle: AppLanguage.text(russian: "Удалить", english: "Delete"))
         alert.addButton(withTitle: AppLanguage.text(russian: "Отмена", english: "Cancel"))
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn, let self = self,
-                  self.vpnController.state == .disconnected else { return }
-            self.subscriptions.removeAll { $0.id == id }
-            let validIDs = Set(self.allProfiles.map(\.id))
-            self.latencyByProfileID = self.latencyByProfileID.filter { validIDs.contains($0.key) }
-            if self.subscriptions.isEmpty {
-                self.defaults.removeObject(forKey: self.selectedProfileKey)
-                self.defaults.removeObject(forKey: self.autoSelectionKey)
+                  self.vpnController.state == .connected || self.vpnController.state == .disconnected else { return }
+
+            // A deleted last subscription would leave an active VPN with no
+            // disconnect controls on the onboarding screen.
+            if self.subscriptions.count == 1 && self.vpnController.state == .connected {
+                self.vpnController.disconnect { [weak self] error in
+                    guard let self = self else { return }
+                    if let error = error { self.showError(error); return }
+                    self.removeSubscription(id: id)
+                }
+            } else {
+                self.removeSubscription(id: id)
             }
-            self.persistLibrary()
-            self.buildCurrentInterface()
-            self.showStatus(AppLanguage.text(russian: "Подписка удалена.", english: "Subscription deleted."))
         }
     }
 
+    private func removeSubscription(id: UUID) {
+        guard subscriptions.contains(where: { $0.id == id }) else { return }
+        subscriptions.removeAll { $0.id == id }
+        let validIDs = Set(allProfiles.map(\.id))
+        latencyByProfileID = latencyByProfileID.filter { validIDs.contains($0.key) }
+        if subscriptions.isEmpty {
+            defaults.removeObject(forKey: selectedProfileKey)
+            defaults.removeObject(forKey: autoSelectionKey)
+        }
+        persistLibrary()
+        buildCurrentInterface()
+        let note = vpnController.state == .connected
+            ? AppLanguage.text(
+                russian: " Действующее VPN-соединение продолжит работу до отключения.",
+                english: " The current VPN connection will remain until you disconnect."
+            )
+            : ""
+        showStatus(AppLanguage.text(russian: "Подписка удалена.", english: "Subscription deleted.") + note)
+    }
 
     private func startLatencyTest(selectFastest: Bool) {
         let snapshot = allNodes
