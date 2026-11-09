@@ -954,7 +954,11 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     @objc private func testPing() { startLatencyTest(selectFastest: false) }
-    @objc private func autoSelectFastest() { startLatencyTest(selectFastest: true) }
+    @objc private func autoSelectFastest() {
+        guard vpnController.state == .disconnected, !latencyTestInProgress else { return }
+        selectAutomaticServer()
+        showStatus(AppLanguage.text(russian: "Включён автовыбор сервера.", english: "Automatic server selection enabled."))
+    }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         updateLatencyMenu()
@@ -1065,11 +1069,14 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         let testID = latencyTestID
         snapshot.forEach { latencyByProfileID[$0.profile.id] = .testing }
         let previous = selectedNode
+        let wasAutomatic = isAutomaticSelected
         suppressSelectionSave = true
         outlineView.reloadData()
         visibleSubscriptions.forEach { outlineView.expandItem($0) }
         suppressSelectionSave = false
-        if let previous = previous, outlineView.row(forItem: previous) >= 0 {
+        if wasAutomatic && showsAutomaticItem {
+            selectAutomaticServer()
+        } else if let previous = previous, outlineView.row(forItem: previous) >= 0 {
             select(node: previous)
         }
         updateSelection()
@@ -1079,7 +1086,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         for node in snapshot {
             group.enter()
             latencyOperationQueue.addOperation { [weak self] in
-                let milliseconds = self?.measureLatency(to: node.profile.server)
+                let milliseconds = self?.measureLatency(to: node.profile)
                 DispatchQueue.main.async {
                     defer { group.leave() }
                     guard let self = self, self.latencyTestID == testID else { return }
@@ -1101,7 +1108,49 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         }
     }
 
-    private func measureLatency(to host: String) -> Int? {
+    private func measureLatency(to profile: VPNProfile) -> Int? {
+        // For TCP-based profiles, a real port connection is a better health
+        // signal than ICMP to a hosting provider's address.
+        guard profile.kind != .hysteria2 else {
+            return measureICMPLatency(to: profile.server)
+        }
+        guard (1...65535).contains(profile.port),
+              let port = NWEndpoint.Port(rawValue: UInt16(profile.port)) else { return nil }
+
+        let connection = NWConnection(host: NWEndpoint.Host(profile.server), port: port, using: .tcp)
+        let semaphore = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var completed = false
+        var milliseconds: Int?
+        let started = DispatchTime.now().uptimeNanoseconds
+
+        connection.stateUpdateHandler = { state in
+            lock.lock()
+            defer { lock.unlock() }
+            guard !completed else { return }
+            switch state {
+            case .ready:
+                let elapsed = DispatchTime.now().uptimeNanoseconds - started
+                milliseconds = max(1, Int((Double(elapsed) / 1_000_000).rounded()))
+            case .failed(_), .cancelled:
+                break
+            default:
+                return
+            }
+            completed = true
+            semaphore.signal()
+        }
+        connection.start(queue: DispatchQueue.global(qos: .utility))
+        let finished = semaphore.wait(timeout: .now() + 2) == .success
+        connection.cancel()
+        lock.lock()
+        let result = milliseconds
+        lock.unlock()
+        return finished ? result : nil
+    }
+
+    private func measureICMPLatency(to host: String) -> Int? {
+        // Hysteria2 runs over UDP; TCP port probes are meaningless for it.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/sbin/ping")
         process.arguments = ["-n", "-c", "1", "-W", "1000", host]
@@ -1131,6 +1180,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         let enabled = !allNodes.isEmpty && !latencyTestInProgress && !subscriptionRequestInProgress && vpnController.state == .disconnected
         pingMenuItem?.isEnabled = enabled
         fastestMenuItem?.isEnabled = enabled
+        pingButton.isEnabled = enabled
     }
 
     private func latencyText(_ latency: LatencyState) -> String {
