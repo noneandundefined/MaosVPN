@@ -30,7 +30,7 @@ final class AutomaticConfigBuilderTests: XCTestCase {
 
     func testInvalidNodeDoesNotPreventValidNodesFromWorking() throws {
         let invalid = VPNProfile(name: "invalid", kind: .vless, server: "", port: 0, credential: "")
-        let config = try AutomaticConfigBuilder.makeConfig(for: [profile("one.example.com"), invalid])
+        let config = try AutomaticConfigBuilder.makeConfig(for: [invalid, profile("one.example.com")])
         let outbounds = try XCTUnwrap(config["outbounds"] as? [[String: Any]])
         XCTAssertEqual((outbounds[1]["outbounds"] as? [String])?.count, 1)
     }
