@@ -1190,6 +1190,9 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         group.notify(queue: .main) { [weak self] in
             guard let self = self, self.latencyTestID == testID else { return }
             self.latencyTestInProgress = false
+            // Re-enable the per-subscription buttons. Their cells were created
+            // while pinging and must be refreshed after the test finishes.
+            self.visibleSubscriptions.forEach { self.outlineView.reloadItem($0) }
             self.updateState(self.vpnController.state)
             if self.selectFastestWhenFinished { self.selectFastestProfile() }
             else { self.showStatus(L10n.text(.pingFinished)) }
