@@ -23,6 +23,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private var subscriptionRequestInProgress = false
     private var suppressSelectionSave = false
     private var didApplyLaunchPreferences = false
+    private var activeProfileSnapshot: VPNProfile?
+    private var activeAutomaticSelection = false
 
     private let outlineView = NSOutlineView()
     private weak var serverScroll: NSScrollView?
@@ -117,6 +119,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             && vpnController.state == .disconnected
             && (profile != nil || automatic)
         if shouldConnect {
+            activeProfileSnapshot = automatic ? nil : profile
+            activeAutomaticSelection = automatic
             let completion: (Error?) -> Void = { [weak self] error in
                 if let error = error { self?.showError(error) }
                 self?.applyInvisibleMode()
@@ -665,11 +669,11 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     func profileForMenu() -> VPNProfile? {
-        selectedProfile
+        vpnController.state == .connected ? (activeProfileSnapshot ?? selectedProfile) : selectedProfile
     }
 
     func automaticSelectionForMenu() -> Bool {
-        isAutomaticSelected
+        vpnController.state == .connected ? activeAutomaticSelection : isAutomaticSelected
     }
 
     func showMainWindow() {
@@ -683,8 +687,12 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             if let error = error { self?.showError(error) }
         }
         if isAutomaticSelected {
+            activeProfileSnapshot = nil
+            activeAutomaticSelection = true
             vpnController.connectAutomatic(profiles: allProfiles, completion: completion)
         } else if let profile = selectedProfile {
+            activeProfileSnapshot = profile
+            activeAutomaticSelection = false
             vpnController.connect(profile: profile, completion: completion)
         } else {
             showMainWindow()
@@ -717,6 +725,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         switch state {
         case .disconnected:
             stopConnectionTimer(reset: true)
+            activeProfileSnapshot = nil
+            activeAutomaticSelection = false
             statusLabel.stringValue = L10n.text(.disconnected)
             connectionSubtitleLabel.stringValue = AppLanguage.text(
                 russian: "Нажмите, чтобы подключиться к серверу",
@@ -727,6 +737,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             outlineView.isEnabled = !subscriptionRequestInProgress
             searchField.isEnabled = !subscriptionRequestInProgress
             addSubscriptionButton.isEnabled = !subscriptionRequestInProgress
+            setMainControlsEnabled(true)
         case .connecting:
             statusLabel.stringValue = L10n.text(.connecting)
             connectionSubtitleLabel.stringValue = AppLanguage.text(
@@ -743,7 +754,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             connectionSubtitleLabel.stringValue = connectedSubtitle()
             connectButton.connectionStyle = .connected
             connectButton.isEnabled = true
-            setMainControlsEnabled(false)
+            setMainControlsEnabled(true)
         case .disconnecting:
             statusLabel.stringValue = L10n.text(.disconnecting)
             connectionSubtitleLabel.stringValue = AppLanguage.text(
@@ -759,10 +770,11 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func setMainControlsEnabled(_ enabled: Bool) {
-        outlineView.isEnabled = enabled
-        searchField.isEnabled = enabled
-        addSubscriptionButton.isEnabled = enabled
-        pingButton.isEnabled = enabled && !latencyTestInProgress
+        let canBrowse = enabled && !subscriptionRequestInProgress
+        outlineView.isEnabled = canBrowse
+        searchField.isEnabled = canBrowse
+        addSubscriptionButton.isEnabled = canBrowse && vpnController.state == .disconnected
+        pingButton.isEnabled = canBrowse && !latencyTestInProgress
     }
 
     private func applyInvisibleMode() {
@@ -812,7 +824,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             selectedDot.color = .systemGreen
             protocolValueLabel.stringValue = AppLanguage.text(russian: "Автоматический", english: "Automatic")
             let idle = vpnController.state == .disconnected || vpnController.state == .connected
-            connectButton.isEnabled = idle && !latencyTestInProgress && !subscriptionRequestInProgress
+            connectButton.isEnabled = idle && (vpnController.state == .connected || (!latencyTestInProgress && !subscriptionRequestInProgress))
             connectButton.alphaValue = 1
             return
         }
@@ -841,7 +853,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             selectedDot.color = .tertiaryLabelColor
         }
         let idle = vpnController.state == .disconnected || vpnController.state == .connected
-        connectButton.isEnabled = idle && !latencyTestInProgress
+        connectButton.isEnabled = idle && (vpnController.state == .connected || !latencyTestInProgress)
         connectButton.alphaValue = 1
     }
 
@@ -863,7 +875,10 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool { item is SubscriptionEntry }
-    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool { item is ProfileNode || item is AutomaticServerItem }
+    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        guard vpnController.state == .disconnected else { return false }
+        return item is ProfileNode || item is AutomaticServerItem
+    }
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         item is SubscriptionEntry ? 30 : 42
     }
@@ -965,7 +980,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     func menuNeedsUpdate(_ menu: NSMenu) {
         updateLatencyMenu()
         let subscription = subscriptionForContextMenu()
-        let canManage = !subscriptionRequestInProgress && !latencyTestInProgress && vpnController.state == .disconnected
+        let canManage = !subscriptionRequestInProgress && !latencyTestInProgress &&
+            (vpnController.state == .disconnected || vpnController.state == .connected)
         refreshMenuItem?.isEnabled = canManage && subscription?.sourceKind == .remote
         deleteMenuItem?.isEnabled = canManage && subscription != nil
     }
@@ -991,8 +1007,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func refreshSubscription(id: UUID) {
-        guard vpnController.state == .disconnected, !subscriptionRequestInProgress,
-              !latencyTestInProgress,
+        guard (vpnController.state == .disconnected || vpnController.state == .connected),
+              !subscriptionRequestInProgress, !latencyTestInProgress,
               let subscription = subscriptions.first(where: { $0.id == id }),
               subscription.sourceKind == .remote,
               let url = validHTTPSURL(subscription.source) else { return }
@@ -1031,8 +1047,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func deleteSubscription(id: UUID) {
-        guard vpnController.state == .disconnected, !subscriptionRequestInProgress,
-              !latencyTestInProgress,
+        guard (vpnController.state == .disconnected || vpnController.state == .connected),
+              !subscriptionRequestInProgress, !latencyTestInProgress,
               let subscription = subscriptions.first(where: { $0.id == id }),
               let window = view.window else { return }
 
@@ -1064,7 +1080,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     private func startLatencyTest(selectFastest: Bool) {
         let snapshot = allNodes
-        guard !snapshot.isEmpty, !latencyTestInProgress, vpnController.state == .disconnected else { return }
+        guard !snapshot.isEmpty, !latencyTestInProgress, !subscriptionRequestInProgress,
+              (vpnController.state == .disconnected || vpnController.state == .connected) else { return }
         latencyTestInProgress = true
         selectFastestWhenFinished = selectFastest
         latencyTestID = UUID()
@@ -1179,10 +1196,11 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func updateLatencyMenu() {
-        let enabled = !allNodes.isEmpty && !latencyTestInProgress && !subscriptionRequestInProgress && vpnController.state == .disconnected
-        pingMenuItem?.isEnabled = enabled
-        fastestMenuItem?.isEnabled = enabled
-        pingButton.isEnabled = enabled
+        let enabled = !allNodes.isEmpty && !latencyTestInProgress && !subscriptionRequestInProgress
+        let canPing = enabled && (vpnController.state == .disconnected || vpnController.state == .connected)
+        pingMenuItem?.isEnabled = canPing
+        fastestMenuItem?.isEnabled = enabled && vpnController.state == .disconnected
+        pingButton.isEnabled = canPing
     }
 
     private func latencyText(_ latency: LatencyState) -> String {
