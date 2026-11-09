@@ -56,6 +56,19 @@ final class VPNController {
     }
 
     func connect(profile: VPNProfile, completion: @escaping (Error?) -> Void) {
+        connect(name: profile.name, configuration: {
+            try SingBoxConfigBuilder.makeConfig(for: profile)
+        }, completion: completion)
+    }
+
+    func connectAutomatic(profiles: [VPNProfile], completion: @escaping (Error?) -> Void) {
+        connect(name: AppLanguage.text(russian: "Автовыбор", english: "Automatic selection"), configuration: {
+            try AutomaticConfigBuilder.makeConfig(for: profiles)
+        }, completion: completion)
+    }
+
+    private func connect(name: String, configuration: @escaping () throws -> [String: Any],
+                         completion: @escaping (Error?) -> Void) {
         if state == .connected && !isConnected {
             savedPID = nil
             state = .disconnected
@@ -75,7 +88,7 @@ final class VPNController {
                     return
                 }
                 let coreURL = try self.coreURL()
-                let configURL = try self.writeConfig(for: profile)
+                let configURL = try self.writeConfig(config: try configuration())
                 try self.validate(coreURL: coreURL, configURL: configURL)
 
                 let pid = try self.helper.start(configURL: configURL)
@@ -87,7 +100,7 @@ final class VPNController {
                     throw MaosVPNError.processDidNotStart(self.readLogTail())
                 }
                 self.state = .connected
-                self.emitLog("\(L10n.text(.vpnConnected)) \(profile.name)")
+                self.emitLog("\(L10n.text(.vpnConnected)) \(name)")
                 DispatchQueue.main.async { completion(nil) }
             } catch {
                 self.state = .disconnected
@@ -151,10 +164,9 @@ final class VPNController {
         return url
     }
 
-    private func writeConfig(for profile: VPNProfile) throws -> URL {
+    private func writeConfig(config: [String: Any]) throws -> URL {
         let directory = try applicationSupportDirectory()
         let configURL = directory.appendingPathComponent("config.json")
-        let config = try SingBoxConfigBuilder.makeConfig(for: profile)
         let data = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: configURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)

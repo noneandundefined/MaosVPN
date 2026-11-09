@@ -18,13 +18,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = MainViewController()
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 500),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Maos VPN"
-        window.minSize = NSSize(width: 640, height: 480)
+        window.minSize = NSSize(width: 720, height: 480)
         window.tabbingMode = .disallowed
         window.center()
         window.contentViewController = controller
@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController = StatusBarController(
             vpnController: controller.vpnController,
             selectedProfile: { [weak controller] in controller?.profileForMenu() },
+            automaticSelection: { [weak controller] in controller?.automaticSelectionForMenu() ?? false },
             showWindow: { [weak controller] in controller?.showMainWindow() },
             connect: { [weak controller] in controller?.connectSelectedServer() },
             disconnect: { [weak controller] in controller?.disconnectSelectedServer() }

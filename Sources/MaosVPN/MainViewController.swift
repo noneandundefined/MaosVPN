@@ -1,4 +1,5 @@
 import AppKit
+import Network
 import MaosVPNCore
 
 final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTextFieldDelegate, NSMenuDelegate {
@@ -15,6 +16,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private let autoConnectKey = "autoConnectOnLaunch"
     private let invisibleModeKey = "invisibleMode"
     private let selectedProfileKey = "selectedProfileID"
+    private let autoSelectionKey = "automaticServerSelected"
 
     private var subscriptions: [SubscriptionEntry] = []
     private var libraryWasLoaded = false
@@ -27,6 +29,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private let searchField = NSSearchField()
     private let languagePopup = NSPopUpButton()
     private let addSubscriptionButton = NSButton()
+    private let pingButton = NSButton()
+    private let automaticItem = AutomaticServerItem()
     private let autoSwitch = NSSwitch()
     private let invisibleSwitch = NSSwitch()
     private let statusLabel = NSTextField(labelWithString: L10n.text(.disconnected))
@@ -44,6 +48,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private let onboardingAddButton = NSButton()
     private var pingMenuItem: NSMenuItem?
     private var fastestMenuItem: NSMenuItem?
+    private var refreshMenuItem: NSMenuItem?
+    private var deleteMenuItem: NSMenuItem?
 
     private var latencyByProfileID: [UUID: LatencyState] = [:]
     private var latencyTestID = UUID()
@@ -67,6 +73,15 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         return row >= 0 ? outlineView.item(atRow: row) as? ProfileNode : nil
     }
 
+    private var isAutomaticSelected: Bool {
+        let row = outlineView.selectedRow
+        return row >= 0 && (outlineView.item(atRow: row) as? AutomaticServerItem) === automaticItem
+    }
+    private var showsAutomaticItem: Bool {
+        searchQuery.isEmpty ||
+        "Автовыбор".localizedCaseInsensitiveContains(searchQuery) ||
+        "Automatic selection".localizedCaseInsensitiveContains(searchQuery)
+    }
     private var selectedProfile: VPNProfile? { selectedNode?.profile }
     private var allNodes: [ProfileNode] { subscriptions.flatMap(\.profileNodes) }
     private var allProfiles: [VPNProfile] { subscriptions.flatMap(\.profiles) }
@@ -96,14 +111,20 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         guard !didApplyLaunchPreferences else { return }
         didApplyLaunchPreferences = true
         let profile = selectedProfile
+        let automatic = isAutomaticSelected
         let shouldConnect = !isShowingOnboarding
             && defaults.bool(forKey: autoConnectKey)
             && vpnController.state == .disconnected
-            && profile != nil
-        if shouldConnect, let profile = profile {
-            vpnController.connect(profile: profile) { [weak self] error in
+            && (profile != nil || automatic)
+        if shouldConnect {
+            let completion: (Error?) -> Void = { [weak self] error in
                 if let error = error { self?.showError(error) }
                 self?.applyInvisibleMode()
+            }
+            if automatic {
+                vpnController.connectAutomatic(profiles: allProfiles, completion: completion)
+            } else if let profile = profile {
+                vpnController.connect(profile: profile, completion: completion)
             }
         } else {
             applyInvisibleMode()
@@ -213,7 +234,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             sidebar.topAnchor.constraint(equalTo: header.bottomAnchor),
             sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            sidebar.widthAnchor.constraint(equalToConstant: 248),
+            sidebar.widthAnchor.constraint(equalToConstant: 282),
             columnLine.topAnchor.constraint(equalTo: header.bottomAnchor),
             columnLine.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             columnLine.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
@@ -315,10 +336,21 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
         serverScroll = scroll
-        container.addSubview(scroll)
-        scroll.translatesAutoresizingMaskIntoConstraints = false
+        pingButton.title = AppLanguage.text(russian: "Проверить пинг серверов", english: "Test server latency")
+        pingButton.bezelStyle = .rounded
+        pingButton.controlSize = .small
+        pingButton.target = self
+        pingButton.action = #selector(testPing)
+        [pingButton, scroll].forEach {
+            container.addSubview($0)
+            $0.translatesAutoresizingMaskIntoConstraints = false
+        }
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: container.topAnchor),
+            pingButton.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            pingButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            pingButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            pingButton.heightAnchor.constraint(equalToConstant: 26),
+            scroll.topAnchor.constraint(equalTo: pingButton.bottomAnchor, constant: 8),
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor)
@@ -335,6 +367,15 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         fastest.target = self
         pingMenuItem = ping
         fastestMenuItem = fastest
+        menu.addItem(.separator())
+        let refresh = menu.addItem(withTitle: AppLanguage.text(russian: "Обновить подписку", english: "Refresh subscription"),
+                                   action: #selector(refreshSelectedSubscription), keyEquivalent: "")
+        refresh.target = self
+        let delete = menu.addItem(withTitle: AppLanguage.text(russian: "Удалить подписку", english: "Delete subscription"),
+                                  action: #selector(deleteSelectedSubscription), keyEquivalent: "")
+        delete.target = self
+        refreshMenuItem = refresh
+        deleteMenuItem = delete
         return menu
     }
 
@@ -483,12 +524,15 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query != searchQuery else { return }
         let previous = selectedNode
+        let wasAutomatic = isAutomaticSelected
         searchQuery = query
         suppressSelectionSave = true
         outlineView.reloadData()
         visibleSubscriptions.forEach { outlineView.expandItem($0) }
         suppressSelectionSave = false
-        if let previous = previous, outlineView.row(forItem: previous) >= 0 {
+        if wasAutomatic && showsAutomaticItem {
+            selectAutomaticServer()
+        } else if let previous = previous, outlineView.row(forItem: previous) >= 0 {
             select(node: previous)
         } else if let first = visibleSubscriptions.first?.filteredNodes(matching: searchQuery).first {
             select(node: first)
@@ -624,6 +668,10 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         selectedProfile
     }
 
+    func automaticSelectionForMenu() -> Bool {
+        isAutomaticSelected
+    }
+
     func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         view.window?.makeKeyAndOrderFront(nil)
@@ -631,12 +679,15 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
 
     func connectSelectedServer() {
         guard vpnController.state == .disconnected else { return }
-        guard let profile = selectedProfile else {
-            showMainWindow()
-            return
-        }
-        vpnController.connect(profile: profile) { [weak self] error in
+        let completion: (Error?) -> Void = { [weak self] error in
             if let error = error { self?.showError(error) }
+        }
+        if isAutomaticSelected {
+            vpnController.connectAutomatic(profiles: allProfiles, completion: completion)
+        } else if let profile = selectedProfile {
+            vpnController.connect(profile: profile, completion: completion)
+        } else {
+            showMainWindow()
         }
     }
 
@@ -672,7 +723,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
                 english: "Tap to connect to a VPN server"
             )
             connectButton.connectionStyle = .idle
-            connectButton.isEnabled = selectedProfile != nil && !subscriptionRequestInProgress && !latencyTestInProgress
+            connectButton.isEnabled = (selectedProfile != nil || isAutomaticSelected) && !subscriptionRequestInProgress && !latencyTestInProgress
             outlineView.isEnabled = !subscriptionRequestInProgress
             searchField.isEnabled = !subscriptionRequestInProgress
             addSubscriptionButton.isEnabled = !subscriptionRequestInProgress
@@ -703,7 +754,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             connectButton.isEnabled = false
             setMainControlsEnabled(false)
         }
-        connectButton.alphaValue = (selectedProfile == nil && state == .disconnected) ? 0.5 : 1
+        connectButton.alphaValue = (selectedProfile == nil && !isAutomaticSelected && state == .disconnected) ? 0.5 : 1
         updateLatencyMenu()
     }
 
@@ -711,6 +762,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         outlineView.isEnabled = enabled
         searchField.isEnabled = enabled
         addSubscriptionButton.isEnabled = enabled
+        pingButton.isEnabled = enabled && !latencyTestInProgress
     }
 
     private func applyInvisibleMode() {
@@ -749,6 +801,21 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func updateSelection() {
+        if isAutomaticSelected {
+            selectedFlagLabel.stringValue = "⚡"
+            selectedNameLabel.stringValue = AppLanguage.text(russian: "Автовыбор", english: "Automatic selection")
+            selectedDetailsLabel.stringValue = AppLanguage.text(
+                russian: "Проверка качества и смена сервера без переподключения VPN",
+                english: "Live health checks and server switching without VPN restart"
+            )
+            selectedLatencyLabel.stringValue = "AUTO"
+            selectedDot.color = .systemGreen
+            protocolValueLabel.stringValue = AppLanguage.text(russian: "Автоматический", english: "Automatic")
+            let idle = vpnController.state == .disconnected || vpnController.state == .connected
+            connectButton.isEnabled = idle && !latencyTestInProgress && !subscriptionRequestInProgress
+            connectButton.alphaValue = 1
+            return
+        }
         guard let profile = selectedProfile else {
             selectedFlagLabel.stringValue = ""
             selectedNameLabel.stringValue = L10n.text(.addSubscription)
@@ -784,24 +851,41 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        item == nil ? visibleSubscriptions.count : ((item as? SubscriptionEntry)?.filteredNodes(matching: searchQuery).count ?? 0)
+        item == nil
+            ? visibleSubscriptions.count + (showsAutomaticItem ? 1 : 0)
+            : ((item as? SubscriptionEntry)?.filteredNodes(matching: searchQuery).count ?? 0)
     }
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         if let subscription = item as? SubscriptionEntry { return subscription.filteredNodes(matching: searchQuery)[index] }
-        return visibleSubscriptions[index]
+        if showsAutomaticItem && index == 0 { return automaticItem }
+        return visibleSubscriptions[index - (showsAutomaticItem ? 1 : 0)]
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool { item is SubscriptionEntry }
-    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool { item is ProfileNode }
-    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat { item is SubscriptionEntry ? 26 : 40 }
+    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool { item is ProfileNode || item is AutomaticServerItem }
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        item is SubscriptionEntry ? 30 : 42
+    }
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        if item is AutomaticServerItem {
+            let identifier = NSUserInterfaceItemIdentifier("AutoServerCell")
+            let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? AutomaticServerCell)
+                ?? AutomaticServerCell(identifier: identifier)
+            return cell
+        }
         if let subscription = item as? SubscriptionEntry {
             let identifier = NSUserInterfaceItemIdentifier("SubscriptionCell")
             let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? GroupCell) ?? GroupCell(identifier: identifier)
             let nodes = subscription.filteredNodes(matching: searchQuery)
-            cell.update(name: subscription.name, count: nodes.count)
+            cell.update(
+                name: subscription.name, count: nodes.count,
+                canRefresh: subscription.sourceKind == .remote && vpnController.state == .disconnected && !subscriptionRequestInProgress && !latencyTestInProgress,
+                canDelete: vpnController.state == .disconnected && !subscriptionRequestInProgress && !latencyTestInProgress,
+                onRefresh: { [weak self] in self?.refreshSubscription(id: subscription.id) },
+                onDelete: { [weak self] in self?.deleteSubscription(id: subscription.id) }
+            )
             return cell
         }
         guard let node = item as? ProfileNode else { return nil }
@@ -812,8 +896,14 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
-        if !suppressSelectionSave, let id = selectedProfile?.id.uuidString {
-            defaults.set(id, forKey: selectedProfileKey)
+        if !suppressSelectionSave {
+            if isAutomaticSelected {
+                defaults.set(true, forKey: autoSelectionKey)
+                defaults.removeObject(forKey: selectedProfileKey)
+            } else if let id = selectedProfile?.id.uuidString {
+                defaults.set(false, forKey: autoSelectionKey)
+                defaults.set(id, forKey: selectedProfileKey)
+            }
         }
         let previous = starredNode
         let current = selectedNode
@@ -833,6 +923,10 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func restoreSelection() {
+        if defaults.bool(forKey: autoSelectionKey) && showsAutomaticItem {
+            selectAutomaticServer()
+            return
+        }
         let nodes = visibleSubscriptions.flatMap { $0.filteredNodes(matching: searchQuery) }
         if let saved = defaults.string(forKey: selectedProfileKey),
            let node = nodes.first(where: { $0.profile.id.uuidString == saved }) {
@@ -846,6 +940,13 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         }
     }
 
+    private func selectAutomaticServer() {
+        let row = outlineView.row(forItem: automaticItem)
+        guard row >= 0 else { return }
+        outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        outlineView.scrollRowToVisible(row)
+    }
+
     private func select(node: ProfileNode) {
         if let subscription = subscriptions.first(where: { $0.id == node.subscriptionID }) { outlineView.expandItem(subscription) }
         let row = outlineView.row(forItem: node)
@@ -855,9 +956,111 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     @objc private func testPing() { startLatencyTest(selectFastest: false) }
-    @objc private func autoSelectFastest() { startLatencyTest(selectFastest: true) }
+    @objc private func autoSelectFastest() {
+        guard vpnController.state == .disconnected, !latencyTestInProgress else { return }
+        selectAutomaticServer()
+        showStatus(AppLanguage.text(russian: "Включён автовыбор сервера.", english: "Automatic server selection enabled."))
+    }
 
-    func menuNeedsUpdate(_ menu: NSMenu) { updateLatencyMenu() }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        updateLatencyMenu()
+        let subscription = subscriptionForContextMenu()
+        let canManage = !subscriptionRequestInProgress && !latencyTestInProgress && vpnController.state == .disconnected
+        refreshMenuItem?.isEnabled = canManage && subscription?.sourceKind == .remote
+        deleteMenuItem?.isEnabled = canManage && subscription != nil
+    }
+
+    private func subscriptionForContextMenu() -> SubscriptionEntry? {
+        let clickedRow = outlineView.clickedRow
+        let item: Any? = clickedRow >= 0 ? outlineView.item(atRow: clickedRow) : selectedNode
+        if let subscription = item as? SubscriptionEntry { return subscription }
+        if let node = item as? ProfileNode {
+            return subscriptions.first { $0.id == node.subscriptionID }
+        }
+        return nil
+    }
+
+    @objc private func refreshSelectedSubscription() {
+        guard let subscription = subscriptionForContextMenu() else { return }
+        refreshSubscription(id: subscription.id)
+    }
+
+    @objc private func deleteSelectedSubscription() {
+        guard let subscription = subscriptionForContextMenu() else { return }
+        deleteSubscription(id: subscription.id)
+    }
+
+    private func refreshSubscription(id: UUID) {
+        guard vpnController.state == .disconnected, !subscriptionRequestInProgress,
+              !latencyTestInProgress,
+              let subscription = subscriptions.first(where: { $0.id == id }),
+              subscription.sourceKind == .remote,
+              let url = validHTTPSURL(subscription.source) else { return }
+
+        let oldCount = subscription.profiles.count
+        let priorSelectionID = selectedProfile?.id
+        setSubscriptionBusy(true)
+        showStatus(AppLanguage.text(russian: "Обновляем подписку…", english: "Refreshing subscription…"))
+        subscriptionService.load(from: url) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.setSubscriptionBusy(false)
+                switch result {
+                case .failure(let error):
+                    self.showError(error)
+                case .success(let profiles):
+                    guard self.subscriptions.contains(where: { $0.id == id }) else { return }
+                    subscription.replaceProfiles(profiles)
+                    let ids = Set(self.allProfiles.map(\.id))
+                    self.latencyByProfileID = self.latencyByProfileID.filter { ids.contains($0.key) }
+                    self.persistLibrary()
+                    self.buildCurrentInterface()
+                    if let priorID = priorSelectionID,
+                       let node = subscription.profileNodes.first(where: { $0.profile.id == priorID }) {
+                        self.select(node: node)
+                    }
+                    let delta = profiles.count - oldCount
+                    let message = AppLanguage.text(
+                        russian: "Подписка обновлена: \(profiles.count) серверов (изменение: \(delta >= 0 ? "+" : "")\(delta)).",
+                        english: "Subscription refreshed: \(profiles.count) servers (change: \(delta >= 0 ? "+" : "")\(delta))."
+                    )
+                    self.showStatus(message)
+                }
+            }
+        }
+    }
+
+    private func deleteSubscription(id: UUID) {
+        guard vpnController.state == .disconnected, !subscriptionRequestInProgress,
+              !latencyTestInProgress,
+              let subscription = subscriptions.first(where: { $0.id == id }),
+              let window = view.window else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = AppLanguage.text(russian: "Удалить подписку?", english: "Delete subscription?")
+        alert.informativeText = AppLanguage.text(
+            russian: "«\(subscription.name)» и её серверы будут удалены только из приложения.",
+            english: "“\(subscription.name)” and its servers will only be removed from this app."
+        )
+        alert.addButton(withTitle: AppLanguage.text(russian: "Удалить", english: "Delete"))
+        alert.addButton(withTitle: AppLanguage.text(russian: "Отмена", english: "Cancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self = self,
+                  self.vpnController.state == .disconnected else { return }
+            self.subscriptions.removeAll { $0.id == id }
+            let validIDs = Set(self.allProfiles.map(\.id))
+            self.latencyByProfileID = self.latencyByProfileID.filter { validIDs.contains($0.key) }
+            if self.subscriptions.isEmpty {
+                self.defaults.removeObject(forKey: self.selectedProfileKey)
+                self.defaults.removeObject(forKey: self.autoSelectionKey)
+            }
+            self.persistLibrary()
+            self.buildCurrentInterface()
+            self.showStatus(AppLanguage.text(russian: "Подписка удалена.", english: "Subscription deleted."))
+        }
+    }
+
 
     private func startLatencyTest(selectFastest: Bool) {
         let snapshot = allNodes
@@ -868,11 +1071,14 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         let testID = latencyTestID
         snapshot.forEach { latencyByProfileID[$0.profile.id] = .testing }
         let previous = selectedNode
+        let wasAutomatic = isAutomaticSelected
         suppressSelectionSave = true
         outlineView.reloadData()
         visibleSubscriptions.forEach { outlineView.expandItem($0) }
         suppressSelectionSave = false
-        if let previous = previous, outlineView.row(forItem: previous) >= 0 {
+        if wasAutomatic && showsAutomaticItem {
+            selectAutomaticServer()
+        } else if let previous = previous, outlineView.row(forItem: previous) >= 0 {
             select(node: previous)
         }
         updateSelection()
@@ -882,7 +1088,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         for node in snapshot {
             group.enter()
             latencyOperationQueue.addOperation { [weak self] in
-                let milliseconds = self?.measureLatency(to: node.profile.server)
+                let milliseconds = self?.measureLatency(to: node.profile)
                 DispatchQueue.main.async {
                     defer { group.leave() }
                     guard let self = self, self.latencyTestID == testID else { return }
@@ -904,7 +1110,49 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         }
     }
 
-    private func measureLatency(to host: String) -> Int? {
+    private func measureLatency(to profile: VPNProfile) -> Int? {
+        // For TCP-based profiles, a real port connection is a better health
+        // signal than ICMP to a hosting provider's address.
+        guard profile.kind != .hysteria2 else {
+            return measureICMPLatency(to: profile.server)
+        }
+        guard (1...65535).contains(profile.port),
+              let port = NWEndpoint.Port(rawValue: UInt16(profile.port)) else { return nil }
+
+        let connection = NWConnection(host: NWEndpoint.Host(profile.server), port: port, using: .tcp)
+        let semaphore = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var completed = false
+        var milliseconds: Int?
+        let started = DispatchTime.now().uptimeNanoseconds
+
+        connection.stateUpdateHandler = { state in
+            lock.lock()
+            defer { lock.unlock() }
+            guard !completed else { return }
+            switch state {
+            case .ready:
+                let elapsed = DispatchTime.now().uptimeNanoseconds - started
+                milliseconds = max(1, Int((Double(elapsed) / 1_000_000).rounded()))
+            case .failed(_), .cancelled:
+                break
+            default:
+                return
+            }
+            completed = true
+            semaphore.signal()
+        }
+        connection.start(queue: DispatchQueue.global(qos: .utility))
+        let finished = semaphore.wait(timeout: .now() + 2) == .success
+        connection.cancel()
+        lock.lock()
+        let result = milliseconds
+        lock.unlock()
+        return finished ? result : nil
+    }
+
+    private func measureICMPLatency(to host: String) -> Int? {
+        // Hysteria2 runs over UDP; TCP port probes are meaningless for it.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/sbin/ping")
         process.arguments = ["-n", "-c", "1", "-W", "1000", host]
@@ -934,6 +1182,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         let enabled = !allNodes.isEmpty && !latencyTestInProgress && !subscriptionRequestInProgress && vpnController.state == .disconnected
         pingMenuItem?.isEnabled = enabled
         fastestMenuItem?.isEnabled = enabled
+        pingButton.isEnabled = enabled
     }
 
     private func latencyText(_ latency: LatencyState) -> String {
@@ -1037,9 +1286,57 @@ private final class DotView: NSView {
     }
 }
 
+private final class AutomaticServerItem: NSObject {}
+
+private final class AutomaticServerCell: NSTableCellView {
+    private let iconLabel = NSTextField(labelWithString: "⚡")
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let detailLabel = NSTextField(labelWithString: "")
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+        iconLabel.font = NSFont.systemFont(ofSize: 18)
+        nameLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        nameLabel.stringValue = AppLanguage.text(russian: "Автовыбор", english: "Automatic selection")
+        detailLabel.font = NSFont.systemFont(ofSize: 10)
+        detailLabel.textColor = .secondaryLabelColor
+        detailLabel.stringValue = AppLanguage.text(russian: "Лучший доступный сервер", english: "Best available server")
+        for label in [iconLabel, nameLabel, detailLabel] {
+            addSubview(label)
+            label.translatesAutoresizingMaskIntoConstraints = false
+        }
+        NSLayoutConstraint.activate([
+            iconLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconLabel.widthAnchor.constraint(equalToConstant: 22),
+            nameLabel.leadingAnchor.constraint(equalTo: iconLabel.trailingAnchor, constant: 8),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 5),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
+            detailLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            detailLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 1),
+            detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8)
+        ])
+    }
+
+    required init?(coder: NSCoder) { return nil }
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet {
+            let selected = backgroundStyle == .emphasized
+            nameLabel.textColor = selected ? .alternateSelectedControlTextColor : .labelColor
+            detailLabel.textColor = selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        }
+    }
+}
+
 private final class GroupCell: NSTableCellView {
     private let nameLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
+    private let refreshButton = NSButton()
+    private let deleteButton = NSButton()
+    private var onRefresh: (() -> Void)?
+    private var onDelete: (() -> Void)?
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
@@ -1047,37 +1344,70 @@ private final class GroupCell: NSTableCellView {
         nameLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.maximumNumberOfLines = 1
-        countLabel.font = NSFont.systemFont(ofSize: 12)
+        countLabel.font = NSFont.systemFont(ofSize: 11)
         countLabel.textColor = .secondaryLabelColor
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        [nameLabel, countLabel].forEach {
+
+        refreshButton.title = "↻"
+        refreshButton.toolTip = AppLanguage.text(russian: "Загрузить новые серверы", english: "Load new servers")
+        refreshButton.isBordered = false
+        refreshButton.font = NSFont.systemFont(ofSize: 16)
+        refreshButton.target = self
+        refreshButton.action = #selector(refreshTapped)
+
+        deleteButton.title = "×"
+        deleteButton.toolTip = AppLanguage.text(russian: "Удалить подписку", english: "Delete subscription")
+        deleteButton.isBordered = false
+        deleteButton.font = NSFont.systemFont(ofSize: 17)
+        deleteButton.target = self
+        deleteButton.action = #selector(deleteTapped)
+
+        [nameLabel, countLabel, refreshButton, deleteButton].forEach {
             addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
         NSLayoutConstraint.activate([
             nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -8),
-            countLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -5),
+            countLabel.trailingAnchor.constraint(equalTo: refreshButton.leadingAnchor, constant: -5),
+            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            refreshButton.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -2),
+            refreshButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            refreshButton.widthAnchor.constraint(equalToConstant: 22),
+            refreshButton.heightAnchor.constraint(equalToConstant: 24),
+            deleteButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -3),
+            deleteButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            deleteButton.widthAnchor.constraint(equalToConstant: 22),
+            deleteButton.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
 
     required init?(coder: NSCoder) { return nil }
 
-    func update(name: String, count: Int) {
+    func update(name: String, count: Int, canRefresh: Bool, canDelete: Bool,
+                onRefresh: @escaping () -> Void, onDelete: @escaping () -> Void) {
         nameLabel.stringValue = name
         countLabel.stringValue = "\(count)"
+        refreshButton.isEnabled = canRefresh
+        deleteButton.isEnabled = canDelete
+        refreshButton.toolTip = canRefresh
+            ? AppLanguage.text(russian: "Обновить серверы из подписки", english: "Refresh servers from subscription")
+            : AppLanguage.text(russian: "Обновление доступно для URL-подписок при отключённом VPN",
+                               english: "Refresh requires a URL subscription and disconnected VPN")
+        self.onRefresh = onRefresh
+        self.onDelete = onDelete
     }
+
+    @objc private func refreshTapped() { onRefresh?() }
+    @objc private func deleteTapped() { onDelete?() }
 
     override var backgroundStyle: NSView.BackgroundStyle {
-        didSet { applyColors() }
-    }
-
-    private func applyColors() {
-        let selected = backgroundStyle == .emphasized
-        nameLabel.textColor = selected ? .alternateSelectedControlTextColor : .labelColor
-        countLabel.textColor = selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        didSet {
+            let selected = backgroundStyle == .emphasized
+            nameLabel.textColor = selected ? .alternateSelectedControlTextColor : .labelColor
+            countLabel.textColor = selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        }
     }
 }
 

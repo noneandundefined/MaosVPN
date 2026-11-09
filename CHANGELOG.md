@@ -2,6 +2,27 @@
 
 All notable user-facing changes will be documented here. The project follows semantic versioning where practical.
 
+## [1.2.0] - 2026-11-10
+
+### Added
+
+- A first-class "Automatic selection" server at the top of the sidebar, backed by sing-box URLTest (health checks every 30 seconds).
+- A visible "Test server latency" button and refresh/remove controls on each subscription group.
+- Manual subscription refresh that fetches the existing HTTPS URL again, adds newly published servers, and drops removed ones.
+- Confirmation before removing a locally saved subscription.
+
+### Changed
+
+- Server sidebar widened from 248 to 282 points.
+- Latency checks target the actual TCP server port where possible; Hysteria2 retains ICMP-based checks.
+- Automatic routing changes the outbound for new connections without restarting the VPN tunnel; existing connections remain intact.
+- Server UUIDs persist across refreshes for unchanged endpoints, preserving selections and ping results.
+
+### Notes
+
+- Refresh and deletion are available while disconnected; JSON imports do not have a remote URL to refresh.
+- The actual automatic routing choice is managed by sing-box. Ping numbers in the UI are connection reachability estimates, not full proxy-handshake timings.
+
 ## [Unreleased]
 
 ### Changed
