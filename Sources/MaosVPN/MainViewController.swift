@@ -843,8 +843,10 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             selectedLatencyLabel.stringValue = "—"
             selectedDot.color = .tertiaryLabelColor
             protocolValueLabel.stringValue = "—"
-            connectButton.isEnabled = false
-            connectButton.alphaValue = 0.5
+            // A connected tunnel must always retain a usable Disconnect button,
+            // even when the selected subscription/server is removed.
+            connectButton.isEnabled = vpnController.state == .connected
+            connectButton.alphaValue = vpnController.state == .connected ? 1 : 0.5
             return
         }
         let place = ServerPlaceParser.parse(profile.name)
