@@ -55,7 +55,28 @@ final class SubscriptionEntry: NSObject, Codable {
     }
 
     func replaceProfiles(_ profiles: [VPNProfile]) {
-        self.profiles = profiles
+        // Keep the UUID of each unchanged endpoint so a refresh does not lose
+        // the current selection or its latency result.
+        var unmatched = self.profiles
+        self.profiles = profiles.map { updated in
+            guard let index = unmatched.firstIndex(where: {
+                $0.kind == updated.kind &&
+                $0.server == updated.server &&
+                $0.port == updated.port &&
+                $0.credential == updated.credential &&
+                $0.parameters == updated.parameters
+            }) else { return updated }
+            let old = unmatched.remove(at: index)
+            return VPNProfile(
+                id: old.id,
+                name: updated.name,
+                kind: updated.kind,
+                server: updated.server,
+                port: updated.port,
+                credential: updated.credential,
+                parameters: updated.parameters
+            )
+        }
         rebuildNodes()
     }
 
