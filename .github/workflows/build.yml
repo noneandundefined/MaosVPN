@@ -52,6 +52,8 @@ jobs:
           set -euo pipefail
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             app_version="${GITHUB_REF_NAME#v}"
+          elif [[ "$GITHUB_REF" == "refs/heads/main" ]] && [[ -f VERSION ]]; then
+            app_version="$(tr -d '[:space:]' < VERSION)"
           else
             app_version="0.1.${GITHUB_RUN_NUMBER}"
           fi
@@ -84,12 +86,16 @@ jobs:
           if-no-files-found: error
 
       - name: Generate release description
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          release_tag="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            release_tag="v$(tr -d '[:space:]' < VERSION)"
+          fi
 
           notes_file="$RUNNER_TEMP/release-notes.md"
           cat > "$notes_file" <<'RELEASE_NOTES'
@@ -110,7 +116,9 @@ jobs:
           - TCP, WebSocket, gRPC, HTTPUpgrade, TLS, and Reality support
           - Full-device VPN routing for browsers and applications
           - Native macOS interface that follows the system light or dark appearance
-          - Per-server latency test and automatic fastest-server selection
+          - Visible automatic server using sing-box URLTest with 30-second checks and seamless route selection
+          - Manual subscription refresh and deletion without re-adding subscription URLs
+          - TCP port latency checks and a wider sidebar
           - Large circular connection control with a live session timer
           - English and Russian languages with live switching
           - Profiles stored locally, with no analytics or tracking
@@ -148,7 +156,9 @@ jobs:
           - Поддержка TCP, WebSocket, gRPC, HTTPUpgrade, TLS и Reality
           - Системный TUN-режим для браузеров и приложений
           - Нативный интерфейс в системной светлой или тёмной теме macOS
-          - Проверка пинга и автоматический выбор самого быстрого сервера
+          - Отдельный сервер «Автовыбор» с проверкой маршрутов каждые 30 секунд
+          - Обновление и удаление подписок без повторного добавления
+          - Проверка доступности TCP-портов и более широкая боковая панель
           - Большая круглая кнопка подключения с таймером сеанса
           - Русский и английский языки с переключением без перезапуска
           - Локальное хранение профилей, без аналитики и отслеживания
@@ -188,36 +198,48 @@ jobs:
           generated_notes="$(gh api \
             --method POST \
             "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$GITHUB_REF_NAME" \
+            -f tag_name="$release_tag" \
+            -f target_commitish="$GITHUB_SHA" \
             --jq '.body')"
 
           if [[ -n "$generated_notes" ]]; then
             printf '\n\n---\n\n## Changes in %s\n\n%s\n' \
-              "$GITHUB_REF_NAME" "$generated_notes" >> "$notes_file"
+              "$release_tag" "$generated_notes" >> "$notes_file"
           fi
 
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" \
+          set -euo pipefail
+          release_tag="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            release_tag="v$(tr -d '[:space:]' < VERSION)"
+            # Do not publish unrelated later commits under an existing version.
+            if gh release view "$release_tag" >/dev/null 2>&1; then
+              echo "Release $release_tag already exists; skipping."
+              exit 0
+            fi
+          fi
+          if gh release view "$release_tag" >/dev/null 2>&1; then
+            gh release upload "$release_tag" \
               dist/MaosVPN-macOS-10.15-Intel.zip \
               dist/MaosVPN-macOS-10.15-Intel.dmg \
               dist/SHA256SUMS.txt \
               --clobber
-            gh release edit "$GITHUB_REF_NAME" \
-              --title "Maos VPN $GITHUB_REF_NAME" \
+            gh release edit "$release_tag" \
+              --title "Maos VPN $release_tag" \
               --notes-file "$RUNNER_TEMP/release-notes.md" \
               --latest
           else
-            gh release create "$GITHUB_REF_NAME" \
+            gh release create "$release_tag" \
               dist/MaosVPN-macOS-10.15-Intel.zip \
               dist/MaosVPN-macOS-10.15-Intel.dmg \
               dist/SHA256SUMS.txt \
               --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --target "$GITHUB_SHA" \
               --latest \
-              --title "Maos VPN $GITHUB_REF_NAME"
+              --title "Maos VPN $release_tag"
           fi
