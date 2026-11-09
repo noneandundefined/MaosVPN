@@ -4,7 +4,10 @@ import Foundation
 /// restarting the TUN interface or requesting administrator privileges again.
 public enum AutomaticConfigBuilder {
     public static func makeConfig(for profiles: [VPNProfile]) throws -> [String: Any] {
-        guard let first = profiles.first else { throw MaosVPNError.emptySubscription }
+        guard !profiles.isEmpty else { throw MaosVPNError.emptySubscription }
+        guard let first = profiles.first(where: { (try? SingBoxConfigBuilder.makeConfig(for: $0)) != nil }) else {
+            throw MaosVPNError.unsupportedSubscription
+        }
         var config = try SingBoxConfigBuilder.makeConfig(for: first)
         var outbounds: [[String: Any]] = []
         var tags: [String] = []
