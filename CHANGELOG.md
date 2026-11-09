@@ -2,6 +2,19 @@
 
 All notable user-facing changes will be documented here. The project follows semantic versioning where practical.
 
+## [1.2.1] - 2026-11-10
+
+### Added
+- Happ-compatible subscription metadata from HTTP headers or #comment directives: expiry, used/total traffic, provider name, website, and support URL.
+- Subscription information sheet with HTTPS link actions and a hidden-by-default reveal/copy control for the subscription URL.
+- Expiry indicator directly under each subscription name; remains unknown when the provider publishes no expiry.
+
+### Fixed
+- Manual ping tests can now run while the VPN is connected without blocking the Disconnect control.
+- Subscription refresh and removal work while connected. The existing tunnel keeps its current settings until reconnection.
+- Removing the last subscription safely disconnects the VPN before switching to onboarding.
+- The menu bar retains the actual active server label even after the subscription list changes.
+
 ## [1.2.0] - 2026-11-10
 
 ### Added

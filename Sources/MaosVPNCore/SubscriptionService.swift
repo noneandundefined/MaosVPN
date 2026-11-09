@@ -16,6 +16,12 @@ public final class SubscriptionService {
     }
 
     public func load(from url: URL, completion: @escaping (Result<[VPNProfile], Error>) -> Void) {
+        loadWithMetadata(from: url) { result in
+            completion(result.map { $0.profiles })
+        }
+    }
+
+    public func loadWithMetadata(from url: URL, completion: @escaping (Result<SubscriptionResponse, Error>) -> Void) {
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
         var request = Self.makeRequest(
             for: url,
@@ -54,7 +60,9 @@ public final class SubscriptionService {
                 return
             }
             do {
-                completion(.success(try ShareLinkParser.parseSubscription(data)))
+                let profiles = try ShareLinkParser.parseSubscription(data)
+                let metadata = SubscriptionMetadata.parse(response: response as? HTTPURLResponse, body: data)
+                completion(.success(SubscriptionResponse(profiles: profiles, metadata: metadata)))
             } catch {
                 completion(.failure(error))
             }
