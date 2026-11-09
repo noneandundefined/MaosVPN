@@ -14,17 +14,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private let vpnController: VPNController
     private let selectedProfile: () -> VPNProfile?
+    private let automaticSelection: () -> Bool
     private let showWindow: () -> Void
     private let connect: () -> Void
     private let disconnect: () -> Void
 
     init(vpnController: VPNController,
          selectedProfile: @escaping () -> VPNProfile?,
+         automaticSelection: @escaping () -> Bool,
          showWindow: @escaping () -> Void,
          connect: @escaping () -> Void,
          disconnect: @escaping () -> Void) {
         self.vpnController = vpnController
         self.selectedProfile = selectedProfile
+        self.automaticSelection = automaticSelection
         self.showWindow = showWindow
         self.connect = connect
         self.disconnect = disconnect
@@ -78,7 +81,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .connecting:
             statusMenuItem.title = L10n.text(.connecting)
         case .connected:
-            statusMenuItem.title = selectedProfile().map { ServerPlaceParser.parse($0.name).title } ?? L10n.text(.connected)
+            statusMenuItem.title = automaticSelection()
+                ? AppLanguage.text(russian: "Автовыбор", english: "Automatic selection")
+                : (selectedProfile().map { ServerPlaceParser.parse($0.name).title } ?? L10n.text(.connected))
         case .disconnecting:
             statusMenuItem.title = L10n.text(.disconnecting)
         }
@@ -86,7 +91,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         disconnectMenuItem.title = L10n.text(.disconnect)
         openMenuItem.title = L10n.text(.openWindow)
         quitMenuItem.title = L10n.text(.quit)
-        connectMenuItem.isEnabled = state == .disconnected && selectedProfile() != nil
+        connectMenuItem.isEnabled = state == .disconnected && (selectedProfile() != nil || automaticSelection())
         disconnectMenuItem.isEnabled = state == .connected
         let tip = connected ? L10n.text(.connected) : L10n.text(.disconnected)
         statusItem.button?.toolTip = "Maos VPN — \(tip)"
