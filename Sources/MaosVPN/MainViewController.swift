@@ -50,6 +50,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private let onboardingAddButton = NSButton()
     private var pingMenuItem: NSMenuItem?
     private var fastestMenuItem: NSMenuItem?
+    private var detailsMenuItem: NSMenuItem?
     private var refreshMenuItem: NSMenuItem?
     private var deleteMenuItem: NSMenuItem?
 
@@ -372,6 +373,10 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         pingMenuItem = ping
         fastestMenuItem = fastest
         menu.addItem(.separator())
+        let details = menu.addItem(withTitle: AppLanguage.text(russian: "Информация о подписке", english: "Subscription details"),
+                                   action: #selector(showSelectedSubscriptionDetails), keyEquivalent: "")
+        details.target = self
+        detailsMenuItem = details
         let refresh = menu.addItem(withTitle: AppLanguage.text(russian: "Обновить подписку", english: "Refresh subscription"),
                                    action: #selector(refreshSelectedSubscription), keyEquivalent: "")
         refresh.target = self
@@ -883,7 +888,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         return item is ProfileNode || item is AutomaticServerItem
     }
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        item is SubscriptionEntry ? 30 : 42
+        item is SubscriptionEntry ? 44 : 42
     }
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
@@ -897,10 +902,14 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             let identifier = NSUserInterfaceItemIdentifier("SubscriptionCell")
             let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? GroupCell) ?? GroupCell(identifier: identifier)
             let nodes = subscription.filteredNodes(matching: searchQuery)
+            let stateAllowsManagement = vpnController.state == .disconnected || vpnController.state == .connected
+            let canManage = stateAllowsManagement && !subscriptionRequestInProgress && !latencyTestInProgress
             cell.update(
                 name: subscription.name, count: nodes.count,
-                canRefresh: subscription.sourceKind == .remote && vpnController.state == .disconnected && !subscriptionRequestInProgress && !latencyTestInProgress,
-                canDelete: vpnController.state == .disconnected && !subscriptionRequestInProgress && !latencyTestInProgress,
+                expiresAt: subscription.metadata?.expiresAt,
+                canRefresh: canManage && subscription.sourceKind == .remote,
+                canDelete: canManage,
+                onDetails: { [weak self] in self?.showSubscriptionDetails(id: subscription.id) },
                 onRefresh: { [weak self] in self?.refreshSubscription(id: subscription.id) },
                 onDelete: { [weak self] in self?.deleteSubscription(id: subscription.id) }
             )
@@ -983,6 +992,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     func menuNeedsUpdate(_ menu: NSMenu) {
         updateLatencyMenu()
         let subscription = subscriptionForContextMenu()
+        detailsMenuItem?.isEnabled = subscription != nil
         let canManage = !subscriptionRequestInProgress && !latencyTestInProgress &&
             (vpnController.state == .disconnected || vpnController.state == .connected)
         refreshMenuItem?.isEnabled = canManage && subscription?.sourceKind == .remote
@@ -997,6 +1007,26 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             return subscriptions.first { $0.id == node.subscriptionID }
         }
         return nil
+    }
+
+    @objc private func showSelectedSubscriptionDetails() {
+        guard let subscription = subscriptionForContextMenu() else { return }
+        showSubscriptionDetails(id: subscription.id)
+    }
+
+    private func showSubscriptionDetails(id: UUID) {
+        guard let subscription = subscriptions.first(where: { $0.id == id }),
+              let window = view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = subscription.name
+        alert.informativeText = AppLanguage.text(
+            russian: "Сведения, полученные от провайдера при загрузке или обновлении подписки.",
+            english: "Information received from your provider when the subscription was fetched."
+        )
+        alert.accessoryView = SubscriptionDetailsView(subscription: subscription)
+        alert.addButton(withTitle: L10n.text(.okay))
+        alert.beginSheetModal(for: window, completionHandler: nil)
     }
 
     @objc private func refreshSelectedSubscription() {
@@ -1390,9 +1420,12 @@ private final class AutomaticServerCell: NSTableCellView {
 
 private final class GroupCell: NSTableCellView {
     private let nameLabel = NSTextField(labelWithString: "")
+    private let expiryLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
+    private let detailsButton = NSButton()
     private let refreshButton = NSButton()
     private let deleteButton = NSButton()
+    private var onDetails: (() -> Void)?
     private var onRefresh: (() -> Void)?
     private var onDelete: (() -> Void)?
 
@@ -1402,12 +1435,23 @@ private final class GroupCell: NSTableCellView {
         nameLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.maximumNumberOfLines = 1
-        countLabel.font = NSFont.systemFont(ofSize: 11)
-        countLabel.textColor = .secondaryLabelColor
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        expiryLabel.font = NSFont.systemFont(ofSize: 10)
+        expiryLabel.textColor = .secondaryLabelColor
+        expiryLabel.lineBreakMode = .byTruncatingTail
+        expiryLabel.maximumNumberOfLines = 1
+        countLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        countLabel.textColor = .secondaryLabelColor
+
+        detailsButton.title = "ⓘ"
+        detailsButton.toolTip = AppLanguage.text(russian: "Информация о подписке", english: "Subscription details")
+        detailsButton.isBordered = false
+        detailsButton.font = NSFont.systemFont(ofSize: 15)
+        detailsButton.target = self
+        detailsButton.action = #selector(detailsTapped)
 
         refreshButton.title = "↻"
-        refreshButton.toolTip = AppLanguage.text(russian: "Загрузить новые серверы", english: "Load new servers")
+        refreshButton.toolTip = AppLanguage.text(russian: "Обновить подписку", english: "Refresh subscription")
         refreshButton.isBordered = false
         refreshButton.font = NSFont.systemFont(ofSize: 16)
         refreshButton.target = self
@@ -1420,43 +1464,64 @@ private final class GroupCell: NSTableCellView {
         deleteButton.target = self
         deleteButton.action = #selector(deleteTapped)
 
-        [nameLabel, countLabel, refreshButton, deleteButton].forEach {
+        [nameLabel, expiryLabel, countLabel, detailsButton, refreshButton, deleteButton].forEach {
             addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
         NSLayoutConstraint.activate([
             nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
             nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -5),
-            countLabel.trailingAnchor.constraint(equalTo: refreshButton.leadingAnchor, constant: -5),
+            expiryLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            expiryLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+            expiryLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -5),
+            countLabel.trailingAnchor.constraint(equalTo: detailsButton.leadingAnchor, constant: -3),
             countLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            refreshButton.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -2),
+            detailsButton.trailingAnchor.constraint(equalTo: refreshButton.leadingAnchor, constant: -1),
+            detailsButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            detailsButton.widthAnchor.constraint(equalToConstant: 21),
+            detailsButton.heightAnchor.constraint(equalToConstant: 24),
+            refreshButton.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -1),
             refreshButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            refreshButton.widthAnchor.constraint(equalToConstant: 22),
+            refreshButton.widthAnchor.constraint(equalToConstant: 21),
             refreshButton.heightAnchor.constraint(equalToConstant: 24),
             deleteButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -3),
             deleteButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            deleteButton.widthAnchor.constraint(equalToConstant: 22),
+            deleteButton.widthAnchor.constraint(equalToConstant: 21),
             deleteButton.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
 
     required init?(coder: NSCoder) { return nil }
 
-    func update(name: String, count: Int, canRefresh: Bool, canDelete: Bool,
+    func update(name: String, count: Int, expiresAt: Date?,
+                canRefresh: Bool, canDelete: Bool,
+                onDetails: @escaping () -> Void,
                 onRefresh: @escaping () -> Void, onDelete: @escaping () -> Void) {
         nameLabel.stringValue = name
         countLabel.stringValue = "\(count)"
+        if let date = expiresAt {
+            let dateText = DateFormatter.localizedString(from: date, dateStyle: .short, timeStyle: .none)
+            expiryLabel.stringValue = date <= Date()
+                ? AppLanguage.text(russian: "Истекла: ", english: "Expired: ") + dateText
+                : AppLanguage.text(russian: "До ", english: "Until ") + dateText
+            expiryLabel.textColor = date <= Date() ? .systemRed : .secondaryLabelColor
+        } else {
+            expiryLabel.stringValue = AppLanguage.text(russian: "Срок не указан", english: "No expiry info")
+            expiryLabel.textColor = .tertiaryLabelColor
+        }
+        detailsButton.isEnabled = true
         refreshButton.isEnabled = canRefresh
         deleteButton.isEnabled = canDelete
         refreshButton.toolTip = canRefresh
-            ? AppLanguage.text(russian: "Обновить серверы из подписки", english: "Refresh servers from subscription")
-            : AppLanguage.text(russian: "Обновление доступно для URL-подписок при отключённом VPN",
-                               english: "Refresh requires a URL subscription and disconnected VPN")
+            ? AppLanguage.text(russian: "Загрузить новые серверы", english: "Fetch new servers")
+            : AppLanguage.text(russian: "Только для URL-подписок", english: "Only for URL subscriptions")
+        self.onDetails = onDetails
         self.onRefresh = onRefresh
         self.onDelete = onDelete
     }
 
+    @objc private func detailsTapped() { onDetails?() }
     @objc private func refreshTapped() { onRefresh?() }
     @objc private func deleteTapped() { onDelete?() }
 
