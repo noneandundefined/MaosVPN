@@ -59,7 +59,11 @@ final class SubscriptionMetadataTests: XCTestCase {
     }
 
     func testBase64CommentMetadata() throws {
-        let body = "#profile-title: Base64 VPN\\n#subscription-userinfo: expire=1790951622\\nvless://test"
+        let body = """
+        #profile-title: Base64 VPN
+        #subscription-userinfo: expire=1790951622
+        vless://test
+        """
         let metadata = try XCTUnwrap(SubscriptionMetadata.parse(response: nil,
             body: Data(Data(body.utf8).base64EncodedString().utf8)))
         XCTAssertEqual(metadata.title, "Base64 VPN")
