@@ -881,8 +881,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
             let nodes = subscription.filteredNodes(matching: searchQuery)
             cell.update(
                 name: subscription.name, count: nodes.count,
-                canRefresh: subscription.sourceKind == .remote && vpnController.state == .disconnected && !subscriptionRequestInProgress,
-                canDelete: vpnController.state == .disconnected && !subscriptionRequestInProgress,
+                canRefresh: subscription.sourceKind == .remote && vpnController.state == .disconnected && !subscriptionRequestInProgress && !latencyTestInProgress,
+                canDelete: vpnController.state == .disconnected && !subscriptionRequestInProgress && !latencyTestInProgress,
                 onRefresh: { [weak self] in self?.refreshSubscription(id: subscription.id) },
                 onDelete: { [weak self] in self?.deleteSubscription(id: subscription.id) }
             )
