@@ -956,7 +956,105 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     @objc private func testPing() { startLatencyTest(selectFastest: false) }
     @objc private func autoSelectFastest() { startLatencyTest(selectFastest: true) }
 
-    func menuNeedsUpdate(_ menu: NSMenu) { updateLatencyMenu() }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        updateLatencyMenu()
+        let subscription = subscriptionForContextMenu()
+        let canManage = !subscriptionRequestInProgress && !latencyTestInProgress && vpnController.state == .disconnected
+        refreshMenuItem?.isEnabled = canManage && subscription?.sourceKind == .remote
+        deleteMenuItem?.isEnabled = canManage && subscription != nil
+    }
+
+    private func subscriptionForContextMenu() -> SubscriptionEntry? {
+        let clickedRow = outlineView.clickedRow
+        let item: Any? = clickedRow >= 0 ? outlineView.item(atRow: clickedRow) : selectedNode
+        if let subscription = item as? SubscriptionEntry { return subscription }
+        if let node = item as? ProfileNode {
+            return subscriptions.first { $0.id == node.subscriptionID }
+        }
+        return nil
+    }
+
+    @objc private func refreshSelectedSubscription() {
+        guard let subscription = subscriptionForContextMenu() else { return }
+        refreshSubscription(id: subscription.id)
+    }
+
+    @objc private func deleteSelectedSubscription() {
+        guard let subscription = subscriptionForContextMenu() else { return }
+        deleteSubscription(id: subscription.id)
+    }
+
+    private func refreshSubscription(id: UUID) {
+        guard vpnController.state == .disconnected, !subscriptionRequestInProgress,
+              !latencyTestInProgress,
+              let subscription = subscriptions.first(where: { $0.id == id }),
+              subscription.sourceKind == .remote,
+              let url = validHTTPSURL(subscription.source) else { return }
+
+        let oldCount = subscription.profiles.count
+        let priorSelectionID = selectedProfile?.id
+        setSubscriptionBusy(true)
+        showStatus(AppLanguage.text(russian: "Обновляем подписку…", english: "Refreshing subscription…"))
+        subscriptionService.load(from: url) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.setSubscriptionBusy(false)
+                switch result {
+                case .failure(let error):
+                    self.showError(error)
+                case .success(let profiles):
+                    guard self.subscriptions.contains(where: { $0.id == id }) else { return }
+                    subscription.replaceProfiles(profiles)
+                    let ids = Set(self.allProfiles.map(\.id))
+                    self.latencyByProfileID = self.latencyByProfileID.filter { ids.contains($0.key) }
+                    self.persistLibrary()
+                    self.buildCurrentInterface()
+                    if let priorID = priorSelectionID,
+                       let node = subscription.profileNodes.first(where: { $0.profile.id == priorID }) {
+                        self.select(node: node)
+                    }
+                    let delta = profiles.count - oldCount
+                    let message = AppLanguage.text(
+                        russian: "Подписка обновлена: \(profiles.count) серверов (изменение: \(delta >= 0 ? "+" : "")\(delta)).",
+                        english: "Subscription refreshed: \(profiles.count) servers (change: \(delta >= 0 ? "+" : "")\(delta))."
+                    )
+                    self.showStatus(message)
+                }
+            }
+        }
+    }
+
+    private func deleteSubscription(id: UUID) {
+        guard vpnController.state == .disconnected, !subscriptionRequestInProgress,
+              !latencyTestInProgress,
+              let subscription = subscriptions.first(where: { $0.id == id }),
+              let window = view.window else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = AppLanguage.text(russian: "Удалить подписку?", english: "Delete subscription?")
+        alert.informativeText = AppLanguage.text(
+            russian: "«\(subscription.name)» и её серверы будут удалены только из приложения.",
+            english: "“\(subscription.name)” and its servers will only be removed from this app."
+        )
+        alert.addButton(withTitle: AppLanguage.text(russian: "Удалить", english: "Delete"))
+        alert.addButton(withTitle: AppLanguage.text(russian: "Отмена", english: "Cancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self = self,
+                  self.vpnController.state == .disconnected else { return }
+            self.subscriptions.removeAll { $0.id == id }
+            let validIDs = Set(self.allProfiles.map(\.id))
+            self.latencyByProfileID = self.latencyByProfileID.filter { validIDs.contains($0.key) }
+            if self.subscriptions.isEmpty {
+                self.defaults.removeObject(forKey: self.selectedProfileKey)
+                self.defaults.removeObject(forKey: self.autoSelectionKey)
+            }
+            self.persistLibrary()
+            self.buildCurrentInterface()
+            self.showStatus(AppLanguage.text(russian: "Подписка удалена.", english: "Subscription deleted."))
+        }
+    }
+
 
     private func startLatencyTest(selectFastest: Bool) {
         let snapshot = allNodes
@@ -1136,9 +1234,57 @@ private final class DotView: NSView {
     }
 }
 
+private final class AutomaticServerItem: NSObject {}
+
+private final class AutomaticServerCell: NSTableCellView {
+    private let iconLabel = NSTextField(labelWithString: "⚡")
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let detailLabel = NSTextField(labelWithString: "")
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+        iconLabel.font = NSFont.systemFont(ofSize: 18)
+        nameLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        nameLabel.stringValue = AppLanguage.text(russian: "Автовыбор", english: "Automatic selection")
+        detailLabel.font = NSFont.systemFont(ofSize: 10)
+        detailLabel.textColor = .secondaryLabelColor
+        detailLabel.stringValue = AppLanguage.text(russian: "Лучший доступный сервер", english: "Best available server")
+        for label in [iconLabel, nameLabel, detailLabel] {
+            addSubview(label)
+            label.translatesAutoresizingMaskIntoConstraints = false
+        }
+        NSLayoutConstraint.activate([
+            iconLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconLabel.widthAnchor.constraint(equalToConstant: 22),
+            nameLabel.leadingAnchor.constraint(equalTo: iconLabel.trailingAnchor, constant: 8),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 5),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
+            detailLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            detailLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 1),
+            detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8)
+        ])
+    }
+
+    required init?(coder: NSCoder) { return nil }
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet {
+            let selected = backgroundStyle == .emphasized
+            nameLabel.textColor = selected ? .alternateSelectedControlTextColor : .labelColor
+            detailLabel.textColor = selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        }
+    }
+}
+
 private final class GroupCell: NSTableCellView {
     private let nameLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
+    private let refreshButton = NSButton()
+    private let deleteButton = NSButton()
+    private var onRefresh: (() -> Void)?
+    private var onDelete: (() -> Void)?
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
@@ -1146,37 +1292,70 @@ private final class GroupCell: NSTableCellView {
         nameLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.maximumNumberOfLines = 1
-        countLabel.font = NSFont.systemFont(ofSize: 12)
+        countLabel.font = NSFont.systemFont(ofSize: 11)
         countLabel.textColor = .secondaryLabelColor
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        [nameLabel, countLabel].forEach {
+
+        refreshButton.title = "↻"
+        refreshButton.toolTip = AppLanguage.text(russian: "Загрузить новые серверы", english: "Load new servers")
+        refreshButton.isBordered = false
+        refreshButton.font = NSFont.systemFont(ofSize: 16)
+        refreshButton.target = self
+        refreshButton.action = #selector(refreshTapped)
+
+        deleteButton.title = "×"
+        deleteButton.toolTip = AppLanguage.text(russian: "Удалить подписку", english: "Delete subscription")
+        deleteButton.isBordered = false
+        deleteButton.font = NSFont.systemFont(ofSize: 17)
+        deleteButton.target = self
+        deleteButton.action = #selector(deleteTapped)
+
+        [nameLabel, countLabel, refreshButton, deleteButton].forEach {
             addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
         NSLayoutConstraint.activate([
             nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -8),
-            countLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -5),
+            countLabel.trailingAnchor.constraint(equalTo: refreshButton.leadingAnchor, constant: -5),
+            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            refreshButton.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -2),
+            refreshButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            refreshButton.widthAnchor.constraint(equalToConstant: 22),
+            refreshButton.heightAnchor.constraint(equalToConstant: 24),
+            deleteButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -3),
+            deleteButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            deleteButton.widthAnchor.constraint(equalToConstant: 22),
+            deleteButton.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
 
     required init?(coder: NSCoder) { return nil }
 
-    func update(name: String, count: Int) {
+    func update(name: String, count: Int, canRefresh: Bool, canDelete: Bool,
+                onRefresh: @escaping () -> Void, onDelete: @escaping () -> Void) {
         nameLabel.stringValue = name
         countLabel.stringValue = "\(count)"
+        refreshButton.isEnabled = canRefresh
+        deleteButton.isEnabled = canDelete
+        refreshButton.toolTip = canRefresh
+            ? AppLanguage.text(russian: "Обновить серверы из подписки", english: "Refresh servers from subscription")
+            : AppLanguage.text(russian: "Обновление доступно для URL-подписок при отключённом VPN",
+                               english: "Refresh requires a URL subscription and disconnected VPN")
+        self.onRefresh = onRefresh
+        self.onDelete = onDelete
     }
+
+    @objc private func refreshTapped() { onRefresh?() }
+    @objc private func deleteTapped() { onDelete?() }
 
     override var backgroundStyle: NSView.BackgroundStyle {
-        didSet { applyColors() }
-    }
-
-    private func applyColors() {
-        let selected = backgroundStyle == .emphasized
-        nameLabel.textColor = selected ? .alternateSelectedControlTextColor : .labelColor
-        countLabel.textColor = selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        didSet {
+            let selected = backgroundStyle == .emphasized
+            nameLabel.textColor = selected ? .alternateSelectedControlTextColor : .labelColor
+            countLabel.textColor = selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        }
     }
 }
 
