@@ -1,0 +1,100 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "dns-direct"
+      },
+      {
+        "type": "https",
+        "tag": "dns-remote",
+        "server": "1.1.1.1",
+        "detour": "proxy"
+      }
+    ],
+    "rules": [
+      {
+        "domain": [
+          "relay.example.com"
+        ],
+        "action": "route",
+        "server": "dns-direct"
+      },
+      {
+        "domain": [
+          "exit.example.com"
+        ],
+        "action": "route",
+        "server": "dns-direct"
+      }
+    ],
+    "final": "dns-remote",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "mtu": 9000,
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "proxy-hop-0",
+      "server": "relay.example.com",
+      "server_port": 1080
+    },
+    {
+      "type": "vless",
+      "tag": "proxy",
+      "server": "exit.example.com",
+      "server_port": 443,
+      "uuid": "123e4567-e89b-12d3-a456-426614174000",
+      "detour": "proxy-hop-0",
+      "transport": {
+        "type": "ws",
+        "path": "/special",
+        "max_early_data": 2048
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "cdn.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-direct",
+    "rules": [
+      {
+        "inbound": "tun-in",
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      }
+    ],
+    "final": "proxy"
+  }
+}
