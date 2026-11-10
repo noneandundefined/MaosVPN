@@ -631,7 +631,9 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
                 switch result {
                 case .success(let payload):
                     self.finishAddingSubscription(name: name, kind: .remote, source: source,
-                                                  profiles: payload.profiles, metadata: payload.metadata)
+                                                  profiles: payload.profiles, metadata: payload.metadata,
+                                                  selectedUserAgent: payload.userAgent,
+                                                  comparedUserAgents: payload.comparisons)
                 case .failure(let error): self.showError(error)
                 }
             }
@@ -657,15 +659,20 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func finishAddingSubscription(name: String, kind: SubscriptionSourceKind, source: String,
-                                          profiles: [VPNProfile], metadata: SubscriptionMetadata? = nil) {
+                                          profiles: [VPNProfile], metadata: SubscriptionMetadata? = nil,
+                                          selectedUserAgent: String? = nil,
+                                          comparedUserAgents: [SubscriptionCandidate] = []) {
         let entry = SubscriptionEntry(name: name, sourceKind: kind, source: source,
-                                      profiles: profiles, metadata: metadata)
+                                      profiles: profiles, metadata: metadata,
+                                      selectedUserAgent: selectedUserAgent,
+                                      comparedUserAgents: comparedUserAgents)
         subscriptions.append(entry)
         persistLibrary()
         latencyByProfileID.removeAll()
         buildCurrentInterface()
         if let first = entry.profileNodes.first { select(node: first) }
-        showStatus("\(L10n.text(.subscriptionUpdated)) \(profiles.count).")
+        let format = selectedUserAgent.map { " · \($0)" } ?? ""
+        showStatus("\(L10n.text(.subscriptionUpdated)) \(profiles.count)\(format).")
     }
 
     @objc private func toggleConnection() {
@@ -1062,7 +1069,9 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
                 case .success(let payload):
                     let profiles = payload.profiles
                     guard self.subscriptions.contains(where: { $0.id == id }) else { return }
-                    subscription.replaceProfiles(profiles, metadata: payload.metadata)
+                    subscription.replaceProfiles(profiles, metadata: payload.metadata,
+                                                 selectedUserAgent: payload.userAgent,
+                                                 comparedUserAgents: payload.comparisons)
                     let ids = Set(self.allProfiles.map(\.id))
                     self.latencyByProfileID = self.latencyByProfileID.filter { ids.contains($0.key) }
                     self.persistLibrary()
@@ -1083,7 +1092,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
                             english: " New servers will be active after the next VPN connection."
                         )
                         : ""
-                    self.showStatus(message + note)
+                    self.showStatus(message + " [" + payload.userAgent + "]" + note)
                 }
             }
         }
