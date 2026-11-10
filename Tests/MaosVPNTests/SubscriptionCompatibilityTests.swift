@@ -49,8 +49,8 @@ final class SubscriptionCompatibilityTests: XCTestCase {
         """
         let parsed = try ShareLinkParser.parseDetailed(Data(json.utf8))
         XCTAssertEqual(parsed.profiles.count, 1)
-        XCTAssertEqual(parsed.received, 2)
-        XCTAssertEqual(parsed.skipped.count, 1) // relay is an implementation-only outbound
+        XCTAssertEqual(parsed.received, 1)
+        XCTAssertTrue(parsed.skipped.isEmpty) // relay is an imported implementation-only hop
         let config = try SingBoxConfigBuilder.makeConfig(for: try XCTUnwrap(parsed.profiles.first))
         let outbounds = try XCTUnwrap(config["outbounds"] as? [[String: Any]])
         XCTAssertEqual(outbounds.count, 3)
