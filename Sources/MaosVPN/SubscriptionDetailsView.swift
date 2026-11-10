@@ -11,7 +11,8 @@ final class SubscriptionDetailsView: NSView {
 
     init(subscription: SubscriptionEntry) {
         self.subscription = subscription
-        super.init(frame: NSRect(x: 0, y: 0, width: 466, height: 310))
+        super.init(frame: NSRect(x: 0, y: 0, width: 466,
+                                 height: subscription.importDiagnostics == nil ? 310 : 445))
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -119,6 +120,37 @@ final class SubscriptionDetailsView: NSView {
         actions.addArrangedSubview(revealButton)
         actions.addArrangedSubview(copy)
         stack.addArrangedSubview(actions)
+
+        if let diagnostics = subscription.importDiagnostics {
+            let title = NSTextField(labelWithString: AppLanguage.text(
+                russian: "Отчёт импорта", english: "Import report"
+            ))
+            title.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+            title.textColor = .secondaryLabelColor
+            stack.addArrangedSubview(title)
+
+            let lines = diagnostics.skipped.map { item in
+                "• " + item.title + " [" + item.type + "]: " + item.reason
+            }
+            let report = NSTextView()
+            report.isEditable = false
+            report.isSelectable = true
+            report.isRichText = false
+            report.backgroundColor = .clear
+            report.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+            report.string = ([diagnostics.summary] + lines).joined(separator: "\n")
+
+            let scroll = NSScrollView()
+            scroll.documentView = report
+            scroll.hasVerticalScroller = true
+            scroll.autohidesScrollers = true
+            scroll.drawsBackground = false
+            scroll.borderType = .bezelBorder
+            scroll.translatesAutoresizingMaskIntoConstraints = false
+            scroll.widthAnchor.constraint(equalToConstant: 445).isActive = true
+            scroll.heightAnchor.constraint(equalToConstant: 120).isActive = true
+            stack.addArrangedSubview(scroll)
+        }
 
         addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
