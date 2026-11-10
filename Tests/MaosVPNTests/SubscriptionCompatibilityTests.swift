@@ -141,9 +141,9 @@ private final class MockSubscriptionURLProtocol: URLProtocol {
         let status: Int
         switch agent {
         case "Karing": body = vless1; status = 200
-        case "Happ": body = [vless1,vless2,hysteria].joined(separator: "\n"); status = 200
-        case "sing-box": body = "invalid-data"; status = 200
-        default: body = vless1; status = 403
+        case "Happ/3.3.6": body = [vless1,vless2,hysteria].joined(separator: "\n"); status = 200
+        case "sing-box/1.13.14": body = "invalid-data"; status = 200
+        default: body = vless1; status = 200
         }
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
             headerFields: ["subscription-userinfo": "upload=5; download=10; total=100"])!
@@ -171,7 +171,7 @@ final class MultiUserAgentSubscriptionTests: XCTestCase {
             case .failure(let error): XCTFail("Unexpected error: \(error)")
             case .success(let value):
                 XCTAssertEqual(value.profiles.count, 3)
-                XCTAssertEqual(value.diagnostics?.userAgent, "Happ")
+                XCTAssertEqual(value.diagnostics?.userAgent, "Happ/3.3.6")
                 XCTAssertEqual(value.diagnostics?.imported, 3)
                 XCTAssertEqual(value.metadata?.usedBytes, 15)
             }
@@ -183,7 +183,7 @@ final class MultiUserAgentSubscriptionTests: XCTestCase {
         MockSubscriptionURLProtocol.lock.unlock()
         XCTAssertEqual(requests.count, 4)
         XCTAssertEqual(Set(requests.compactMap { $0.value(forHTTPHeaderField: "User-Agent") }),
-                       Set(["Karing","Happ","sing-box","v2rayN"]))
+                       Set(["Karing","Happ/3.3.6","sing-box/1.13.14","v2rayNG/2.2.6"]))
         XCTAssertTrue(requests.allSatisfy {
             $0.value(forHTTPHeaderField: "X-Hwid") == "stable-device"
         })
