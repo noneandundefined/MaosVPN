@@ -93,9 +93,12 @@ public struct SubscriptionMetadata: Codable, Equatable {
 public struct SubscriptionResponse {
     public let profiles: [VPNProfile]
     public let metadata: SubscriptionMetadata?
+    public let diagnostics: SubscriptionImportDiagnostics?
 
-    public init(profiles: [VPNProfile], metadata: SubscriptionMetadata?) {
+    public init(profiles: [VPNProfile], metadata: SubscriptionMetadata?,
+                diagnostics: SubscriptionImportDiagnostics? = nil) {
         self.profiles = profiles
         self.metadata = metadata
+        self.diagnostics = diagnostics
     }
 }
