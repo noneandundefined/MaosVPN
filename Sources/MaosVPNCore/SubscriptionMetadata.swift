@@ -108,12 +108,15 @@ public struct SubscriptionResponse {
     public let metadata: SubscriptionMetadata?
     public let userAgent: String
     public let comparisons: [SubscriptionCandidate]
+    public let diagnostics: SubscriptionImportDiagnostics?
 
     public init(profiles: [VPNProfile], metadata: SubscriptionMetadata?,
-                userAgent: String = "Karing", comparisons: [SubscriptionCandidate] = []) {
+                userAgent: String = "Karing", comparisons: [SubscriptionCandidate] = [],
+                diagnostics: SubscriptionImportDiagnostics? = nil) {
         self.profiles = profiles
         self.metadata = metadata
         self.userAgent = userAgent
         self.comparisons = comparisons
+        self.diagnostics = diagnostics
     }
 }

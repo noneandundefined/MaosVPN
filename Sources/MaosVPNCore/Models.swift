@@ -30,6 +30,7 @@ public enum VPNProtocolKind: String, Codable, Equatable {
     case vmess
     case trojan
     case shadowsocks
+    case hysteria
     case hysteria2
 
     public var title: String {
@@ -38,6 +39,7 @@ public enum VPNProtocolKind: String, Codable, Equatable {
         case .vmess: return "VMess"
         case .trojan: return "Trojan"
         case .shadowsocks: return "Shadowsocks"
+        case .hysteria: return "Hysteria"
         case .hysteria2: return "Hysteria2"
         }
     }
@@ -51,6 +53,9 @@ public struct VPNProfile: Codable, Equatable {
     public let port: Int
     public let credential: String
     public let parameters: [String: String]
+    /// Sanitized provider outbound and its detour dependencies, encoded as JSON.
+    /// Original provider-wide routing/DNS/TUN settings are never applied.
+    public let sourceOutboundsJSON: String?
 
     public init(
         id: UUID = UUID(),
@@ -59,7 +64,8 @@ public struct VPNProfile: Codable, Equatable {
         server: String,
         port: Int,
         credential: String,
-        parameters: [String: String] = [:]
+        parameters: [String: String] = [:],
+        sourceOutboundsJSON: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -68,6 +74,7 @@ public struct VPNProfile: Codable, Equatable {
         self.port = port
         self.credential = credential
         self.parameters = parameters
+        self.sourceOutboundsJSON = sourceOutboundsJSON
     }
 }
 
@@ -96,8 +103,8 @@ public enum MaosVPNError: LocalizedError {
             )
         case .unsupportedSubscription:
             return AppLanguage.text(
-                russian: "В подписке нет поддерживаемых серверов (VLESS, VMess, Trojan, Shadowsocks или Hysteria2).",
-                english: "The subscription contains no supported servers (VLESS, VMess, Trojan, Shadowsocks, or Hysteria2)."
+                russian: "В подписке нет поддерживаемых серверов (VLESS, VMess, Trojan, Shadowsocks, Hysteria или Hysteria2).",
+                english: "The subscription contains no supported servers (VLESS, VMess, Trojan, Shadowsocks, Hysteria or Hysteria2)."
             )
         case .subscriptionAccessRejected:
             return AppLanguage.text(

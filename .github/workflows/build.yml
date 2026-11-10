@@ -46,6 +46,8 @@ jobs:
           "$CORE_PATH" check -c Tests/Fixtures/sing-box.json
           "$CORE_PATH" check -c Tests/Fixtures/sing-box-hysteria2.json
           "$CORE_PATH" check -c Tests/Fixtures/sing-box-auto.json
+          "$CORE_PATH" check -c Tests/Fixtures/sing-box-hysteria-v1.json
+          "$CORE_PATH" check -c Tests/Fixtures/sing-box-chain.json
 
       - name: Build, test and package
         shell: bash

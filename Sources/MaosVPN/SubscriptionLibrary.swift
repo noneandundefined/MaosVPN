@@ -15,6 +15,7 @@ final class SubscriptionEntry: NSObject, Codable {
     var metadata: SubscriptionMetadata?
     var selectedUserAgent: String?
     var comparedUserAgents: [SubscriptionCandidate]
+    var importDiagnostics: SubscriptionImportDiagnostics?
     private(set) var profileNodes: [ProfileNode] = []
 
     init(
@@ -25,7 +26,8 @@ final class SubscriptionEntry: NSObject, Codable {
         profiles: [VPNProfile],
         metadata: SubscriptionMetadata? = nil,
         selectedUserAgent: String? = nil,
-        comparedUserAgents: [SubscriptionCandidate] = []
+        comparedUserAgents: [SubscriptionCandidate] = [],
+        importDiagnostics: SubscriptionImportDiagnostics? = nil
     ) {
         self.id = id
         self.name = name
@@ -35,12 +37,13 @@ final class SubscriptionEntry: NSObject, Codable {
         self.metadata = metadata
         self.selectedUserAgent = selectedUserAgent
         self.comparedUserAgents = comparedUserAgents
+        self.importDiagnostics = importDiagnostics
         super.init()
         rebuildNodes()
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, sourceKind, source, profiles, metadata, selectedUserAgent, comparedUserAgents
+        case id, name, sourceKind, source, profiles, metadata, selectedUserAgent, comparedUserAgents, importDiagnostics
     }
 
     required init(from decoder: Decoder) throws {
@@ -53,6 +56,7 @@ final class SubscriptionEntry: NSObject, Codable {
         metadata = try container.decodeIfPresent(SubscriptionMetadata.self, forKey: .metadata)
         selectedUserAgent = try container.decodeIfPresent(String.self, forKey: .selectedUserAgent)
         comparedUserAgents = try container.decodeIfPresent([SubscriptionCandidate].self, forKey: .comparedUserAgents) ?? []
+        importDiagnostics = try container.decodeIfPresent(SubscriptionImportDiagnostics.self, forKey: .importDiagnostics)
         super.init()
         rebuildNodes()
     }
@@ -67,14 +71,17 @@ final class SubscriptionEntry: NSObject, Codable {
         try container.encodeIfPresent(metadata, forKey: .metadata)
         try container.encodeIfPresent(selectedUserAgent, forKey: .selectedUserAgent)
         try container.encode(comparedUserAgents, forKey: .comparedUserAgents)
+        try container.encodeIfPresent(importDiagnostics, forKey: .importDiagnostics)
     }
 
     func replaceProfiles(_ profiles: [VPNProfile], metadata: SubscriptionMetadata? = nil,
                          selectedUserAgent: String? = nil,
-                         comparedUserAgents: [SubscriptionCandidate] = []) {
+                         comparedUserAgents: [SubscriptionCandidate] = [],
+                         diagnostics: SubscriptionImportDiagnostics? = nil) {
         self.metadata = metadata
         self.selectedUserAgent = selectedUserAgent
         self.comparedUserAgents = comparedUserAgents
+        self.importDiagnostics = diagnostics
         // Keep the UUID of each unchanged endpoint so a refresh does not lose
         // the current selection or its latency result.
         var unmatched = self.profiles
@@ -94,7 +101,8 @@ final class SubscriptionEntry: NSObject, Codable {
                 server: updated.server,
                 port: updated.port,
                 credential: updated.credential,
-                parameters: updated.parameters
+                parameters: updated.parameters,
+                sourceOutboundsJSON: updated.sourceOutboundsJSON
             )
         }
         rebuildNodes()

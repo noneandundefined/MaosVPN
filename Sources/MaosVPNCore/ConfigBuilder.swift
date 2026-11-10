@@ -9,17 +9,10 @@ public enum SingBoxConfigBuilder {
             ))
         }
 
-        let proxy = try makeOutbound(for: profile)
-        let isIPAddress = IPv4Address(profile.server) || profile.server.contains(":")
-
-        var dnsRules: [[String: Any]] = []
-        if !isIPAddress {
-            dnsRules.append([
-                "domain": [profile.server],
-                "action": "route",
-                "server": "dns-direct"
-            ])
-        }
+        let outbounds = try makeOutbounds(for: profile, primaryTag: "proxy")
+        let dnsRules: [[String: Any]] = ProviderOutboundGraph.domains(in: outbounds)
+            .sorted()
+            .map { ["domain": [$0], "action": "route", "server": "dns-direct"] }
 
         return [
             "log": [
@@ -44,10 +37,7 @@ public enum SingBoxConfigBuilder {
                 "strict_route": true,
                 "stack": "system"
             ]],
-            "outbounds": [
-                proxy,
-                ["type": "direct", "tag": "direct"]
-            ],
+            "outbounds": outbounds + [["type": "direct", "tag": "direct"]],
             "route": [
                 "auto_detect_interface": true,
                 "default_domain_resolver": "dns-direct",
@@ -58,6 +48,21 @@ public enum SingBoxConfigBuilder {
                 "final": "proxy"
             ]
         ]
+    }
+
+    /// Returns the original compatible proxy graph (if present) or builds a
+    /// single outbound from a share link. Every graph is retagged to avoid
+    /// collisions in automatic mode.
+    static func makeOutbounds(for profile: VPNProfile, primaryTag: String) throws -> [[String: Any]] {
+        guard !profile.server.isEmpty, (1...65535).contains(profile.port) else {
+            throw MaosVPNError.malformedProfile("invalid server address or port")
+        }
+        if let graph = try ProviderOutboundGraph.resolved(profile, primaryTag: primaryTag) {
+            return graph
+        }
+        var proxy = try makeOutbound(for: profile)
+        proxy["tag"] = primaryTag
+        return [proxy]
     }
 
     private static func makeOutbound(for profile: VPNProfile) throws -> [String: Any] {
@@ -87,6 +92,30 @@ public enum SingBoxConfigBuilder {
             }
             outbound["method"] = method
             outbound["password"] = profile.credential
+        case .hysteria:
+            let authType = profile.parameters["authType"] ?? "auth_str"
+            outbound[authType == "auth" ? "auth" : "auth_str"] = profile.credential
+            if let upMbps = Int(profile.parameters["up_mbps"] ?? ""), upMbps > 0 {
+                outbound["up_mbps"] = upMbps
+            } else if let up = nonEmpty(profile.parameters["up"]) {
+                outbound["up"] = up
+            } else {
+                throw MaosVPNError.malformedProfile("Hysteria v1: upload bandwidth is missing")
+            }
+            if let downMbps = Int(profile.parameters["down_mbps"] ?? ""), downMbps > 0 {
+                outbound["down_mbps"] = downMbps
+            } else if let down = nonEmpty(profile.parameters["down"]) {
+                outbound["down"] = down
+            } else {
+                throw MaosVPNError.malformedProfile("Hysteria v1: download bandwidth is missing")
+            }
+            if let obfs = nonEmpty(profile.parameters["obfs"]) {
+                outbound["obfs"] = obfs
+            }
+            if let network = nonEmpty(profile.parameters["network"]),
+               network == "tcp" || network == "udp" {
+                outbound["network"] = network
+            }
         case .hysteria2:
             outbound["password"] = profile.credential
             if let upMbps = Int(profile.parameters["up_mbps"] ?? ""), upMbps > 0 {
@@ -101,14 +130,14 @@ public enum SingBoxConfigBuilder {
             }
         }
 
-        if profile.kind != .hysteria2 {
+        if profile.kind != .hysteria2 && profile.kind != .hysteria {
             let network = (profile.parameters["type"] ?? profile.parameters["net"] ?? "tcp").lowercased()
             if let transport = makeTransport(network: network, parameters: profile.parameters) {
                 outbound["transport"] = transport
             }
         }
 
-        let defaultSecurity = (profile.kind == .trojan || profile.kind == .hysteria2) ? "tls" : "none"
+        let defaultSecurity = (profile.kind == .trojan || profile.kind == .hysteria2 || profile.kind == .hysteria) ? "tls" : "none"
         let security = (profile.parameters["security"] ?? profile.parameters["tls"] ?? defaultSecurity).lowercased()
         if security == "tls" || security == "reality" {
             var tls: [String: Any] = ["enabled": true]

@@ -35,6 +35,7 @@ public final class SubscriptionService {
         let profiles: [VPNProfile]
         let metadata: SubscriptionMetadata?
         let userAgent: String
+        let diagnostics: SubscriptionImportDiagnostics
     }
 
     public func loadWithMetadata(from url: URL, completion: @escaping (Result<SubscriptionResponse, Error>) -> Void) {
@@ -55,7 +56,8 @@ public final class SubscriptionService {
             profiles: chosen.profiles,
             metadata: chosen.metadata ?? fallbackMetadata,
             userAgent: chosen.userAgent,
-            comparisons: comparisons
+            comparisons: comparisons,
+            diagnostics: chosen.diagnostics
         )))
     }
 
@@ -111,20 +113,34 @@ public final class SubscriptionService {
             if (200...299).contains(http.statusCode), let data = data, !data.isEmpty,
                data.count <= 10 * 1024 * 1024 {
                 do {
-                    let parsed = try ShareLinkParser.parseSubscription(data)
-                    // The parser intentionally skips protocols that MaosVPN
-                    // cannot currently represent. Also exclude obvious panel
-                    // placeholders and configurations our builder rejects.
-                    let compatible = parsed.filter { profile in
-                        !ShareLinkParser.isProviderPlaceholder(profile) &&
-                            (try? SingBoxConfigBuilder.makeConfig(for: profile)) != nil
+                    let parsed = try ShareLinkParser.parseDetailed(data)
+                    // A malformed profile cannot be activated; keep an explicit
+                    // diagnostic instead of pretending it is a working node.
+                    var rejected = parsed.skipped
+                    let compatible = parsed.profiles.filter { profile in
+                        if (try? SingBoxConfigBuilder.makeConfig(for: profile)) != nil {
+                            return true
+                        }
+                        rejected.append(SkippedSubscriptionServer(
+                            title: profile.name, type: profile.kind.rawValue,
+                            reason: AppLanguage.text(
+                                russian: "ошибка построения конфигурации",
+                                english: "cannot build sing-box config"
+                            )
+                        ))
+                        return false
                     }
+                    let diagnostics = SubscriptionImportDiagnostics(
+                        received: parsed.received, imported: compatible.count,
+                        skipped: rejected, userAgent: userAgent
+                    )
                     let metadata = SubscriptionMetadata.parse(response: http, body: data)
                     if nextMetadata == nil { nextMetadata = metadata }
                     nextComparisons.append(SubscriptionCandidate(userAgent: userAgent,
                                                                   compatibleCount: compatible.count))
                     if !compatible.isEmpty && compatible.count > (best?.profiles.count ?? 0) {
-                        nextBest = Choice(profiles: compatible, metadata: metadata, userAgent: userAgent)
+                        nextBest = Choice(profiles: compatible, metadata: metadata,
+                                          userAgent: userAgent, diagnostics: diagnostics)
                     }
                 } catch {
                     // Some panels express a device limit as a fake 0.0.0.0:1
@@ -156,6 +172,10 @@ public final class SubscriptionService {
     }
 
     public static func parseConfiguration(_ text: String) throws -> [VPNProfile] {
+        try parseConfigurationWithDiagnostics(text).profiles
+    }
+
+    public static func parseConfigurationWithDiagnostics(_ text: String) throws -> SubscriptionResponse {
         let data = Data(text.utf8)
         guard !data.isEmpty else { throw MaosVPNError.emptySubscription }
         guard data.count <= 10 * 1024 * 1024 else {
@@ -164,7 +184,17 @@ public final class SubscriptionService {
                 english: "the configuration exceeds 10 MB"
             ))
         }
-        return try ShareLinkParser.parseSubscription(data)
+        let parsed = try ShareLinkParser.parseDetailed(data)
+        return SubscriptionResponse(
+            profiles: parsed.profiles,
+            metadata: SubscriptionMetadata.parse(response: nil, body: data),
+            userAgent: AppLanguage.text(russian: "Локальный JSON", english: "Local JSON"),
+            diagnostics: SubscriptionImportDiagnostics(
+                received: parsed.received, imported: parsed.profiles.count,
+                skipped: parsed.skipped,
+                userAgent: AppLanguage.text(russian: "Локальный JSON", english: "Local JSON")
+            )
+        )
     }
 
     static func persistentHardwareID(in defaults: UserDefaults) -> String {
@@ -201,64 +231,168 @@ public final class SubscriptionService {
 }
 
 enum ShareLinkParser {
-    static func parseSubscription(_ data: Data) throws -> [VPNProfile] {
-        guard var text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
-            throw MaosVPNError.emptySubscription
-        }
+    struct Parsed {
+        let profiles: [VPNProfile]
+        let received: Int
+        let skipped: [SkippedSubscriptionServer]
+    }
 
-        if !text.contains("://"), let decoded = decodeBase64(text), let decodedText = String(data: decoded, encoding: .utf8) {
+    static func parseSubscription(_ data: Data) throws -> [VPNProfile] {
+        try parseDetailed(data).profiles
+    }
+
+    static func parseDetailed(_ data: Data) throws -> Parsed {
+        guard var text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { throw MaosVPNError.emptySubscription }
+
+        if !text.contains("://"), let decoded = decodeBase64(text),
+           let decodedText = String(data: decoded, encoding: .utf8) {
             text = decodedText
         }
 
-        if let jsonProfiles = parseSingBoxJSON(Data(text.utf8)) {
-            return try validate(jsonProfiles)
+        if let parsed = parseSingBoxJSONDetailed(Data(text.utf8)) {
+            return try validate(parsed)
         }
 
-        let lines = text
-            .components(separatedBy: .newlines)
+        let lines = text.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
 
         var profiles: [VPNProfile] = []
-        for line in lines {
-            if let profile = try? parse(line) {
+        var skipped: [SkippedSubscriptionServer] = []
+        for (index, line) in lines.enumerated() {
+            let kind = String(line.split(separator: ":", maxSplits: 1).first ?? "unknown")
+            do {
+                let profile = try parse(line)
+                // Detect malformed configurations *during import*, rather
+                // than silently putting a non-working profile in the UI.
+                _ = try SingBoxConfigBuilder.makeOutbounds(for: profile, primaryTag: "proxy")
                 profiles.append(profile)
+            } catch {
+                skipped.append(SkippedSubscriptionServer(
+                    title: "Line \(index + 1)", type: kind,
+                    reason: skipReason(error)
+                ))
             }
         }
-
-        return try validate(profiles)
+        return try validate(Parsed(profiles: profiles, received: lines.count, skipped: skipped))
     }
 
-    private static func validate(_ profiles: [VPNProfile]) throws -> [VPNProfile] {
-        guard !profiles.isEmpty else { throw MaosVPNError.unsupportedSubscription }
-        guard !profiles.allSatisfy({ isProviderPlaceholder($0) }) else {
-            throw MaosVPNError.subscriptionAccessRejected
+    private static func validate(_ parsed: Parsed) throws -> Parsed {
+        let placeholders = parsed.profiles.filter(isProviderPlaceholder)
+        let valid = parsed.profiles.filter { !isProviderPlaceholder($0) }
+        if valid.isEmpty && !placeholders.isEmpty { throw MaosVPNError.subscriptionAccessRejected }
+
+        let reports = parsed.skipped + placeholders.map {
+            SkippedSubscriptionServer(
+                title: $0.name, type: $0.kind.rawValue,
+                reason: AppLanguage.text(russian: "заглушка провайдера", english: "provider placeholder")
+            )
         }
-        return profiles
+        guard !valid.isEmpty else {
+            let reasons = reports.prefix(4).map { "\($0.type): \($0.reason)" }.joined(separator: "; ")
+            throw MaosVPNError.malformedProfile(
+                AppLanguage.text(
+                    russian: "нет совместимых серверов из \(parsed.received). \(reasons)",
+                    english: "no compatible servers among \(parsed.received). \(reasons)"
+                )
+            )
+        }
+        return Parsed(profiles: valid, received: parsed.received, skipped: reports)
     }
 
-    private static func parseSingBoxJSON(_ data: Data) -> [VPNProfile]? {
-        guard let json = try? JSONSerialization.jsonObject(with: data) else { return nil }
+    private static func skipReason(_ error: Error) -> String {
+        let text = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        return String(text.prefix(160))
+    }
 
+    private static func parseSingBoxJSONDetailed(_ data: Data) -> Parsed? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) else { return nil }
         let outbounds: [[String: Any]]
         if let document = json as? [String: Any],
            let values = document["outbounds"] as? [[String: Any]] {
             outbounds = values
         } else if let values = json as? [[String: Any]] {
             outbounds = values
-        } else {
-            return nil
+        } else { return nil }
+
+        var source: [String: [String: Any]] = [:]
+        for item in outbounds {
+            if let tag = item["tag"] as? String, !tag.isEmpty, source[tag] == nil {
+                source[tag] = item
+            }
         }
 
-        return outbounds.compactMap(parseSingBoxOutbound)
+        // SOCKS/HTTP/ShadowTLS and other auxiliary outbounds referenced by
+        // a chain are implemented as hops, not separate list entries.
+        var referenced = Set<String>()
+        for outbound in outbounds {
+            if let upstream = ProviderOutboundGraph.detour(outbound) { referenced.insert(upstream) }
+            if let group = outbound["outbounds"] as? [String] {
+                referenced.formUnion(group)
+            }
+        }
+
+        var profiles: [VPNProfile] = []
+        var skipped: [SkippedSubscriptionServer] = []
+        var received = 0
+        for (index, item) in outbounds.enumerated() {
+            let kind = (item["type"] as? String)?.lowercased() ?? "unknown"
+            // These are control outbounds, not VPN endpoints for the UI.
+            if ["direct", "block", "dns", "selector", "urltest"].contains(kind) { continue }
+            if let tag = item["tag"] as? String,
+               referenced.contains(tag),
+               ProviderOutboundGraph.dependencies.contains(kind),
+               !ProviderOutboundGraph.endpoints.contains(kind) {
+                continue
+            }
+            received += 1
+            let title = String((item["tag"] as? String ?? "Node \(index + 1)").prefix(80))
+            guard ProviderOutboundGraph.endpoints.contains(kind) else {
+                skipped.append(SkippedSubscriptionServer(
+                    title: title, type: kind,
+                    reason: AppLanguage.text(russian: "протокол пока не поддерживается",
+                                              english: "protocol is not supported")
+                ))
+                continue
+            }
+            guard let profile = parseSingBoxOutbound(item) else {
+                skipped.append(SkippedSubscriptionServer(
+                    title: title, type: kind,
+                    reason: AppLanguage.text(russian: "не хватает адреса, порта или данных доступа",
+                                              english: "missing server, port or credentials")
+                ))
+                continue
+            }
+            do {
+                // Graph construction preserves full provider TLS, transport,
+                // detour and protocol-specific fields without applying
+                // arbitrary provider-side TUN, DNS or routing settings.
+                let encoded = try ProviderOutboundGraph.extract(root: item, from: source)
+                let value = VPNProfile(
+                    name: profile.name, kind: profile.kind,
+                    server: profile.server, port: profile.port,
+                    credential: profile.credential, parameters: profile.parameters,
+                    sourceOutboundsJSON: encoded
+                )
+                _ = try SingBoxConfigBuilder.makeOutbounds(for: value, primaryTag: "proxy")
+                profiles.append(value)
+            } catch {
+                skipped.append(SkippedSubscriptionServer(
+                    title: title, type: kind, reason: skipReason(error)
+                ))
+            }
+        }
+        return Parsed(profiles: profiles, received: received, skipped: skipped)
     }
 
     private static func parseSingBoxOutbound(_ outbound: [String: Any]) -> VPNProfile? {
         guard let rawType = string("type", in: outbound)?.lowercased(),
-              let server = string("server", in: outbound), !server.isEmpty,
-              let port = integer("server_port", in: outbound), (1...65535).contains(port) else {
+              let server = string("server", in: outbound), !server.isEmpty else {
             return nil
         }
+        let port = integer("server_port", in: outbound) ?? firstServerPort(outbound)
+        guard let resolvedPort = port, (1...65535).contains(resolvedPort) else { return nil }
 
         let kind: VPNProtocolKind
         let credential: String
@@ -280,6 +414,11 @@ enum ShareLinkParser {
                   let method = string("method", in: outbound), !method.isEmpty else { return nil }
             kind = .shadowsocks
             credential = password
+        case "hysteria":
+            guard let password = string("auth_str", in: outbound) ?? string("auth", in: outbound),
+                  !password.isEmpty else { return nil }
+            kind = .hysteria
+            credential = password
         case "hysteria2", "hy2":
             guard let password = string("password", in: outbound), !password.isEmpty else { return nil }
             kind = .hysteria2
@@ -293,6 +432,10 @@ enum ShareLinkParser {
         copyString("packet_encoding", from: outbound, to: "packetEncoding", in: &parameters)
         copyScalar("up_mbps", from: outbound, to: "up_mbps", in: &parameters)
         copyScalar("down_mbps", from: outbound, to: "down_mbps", in: &parameters)
+        copyString("up", from: outbound, to: "up", in: &parameters)
+        copyString("down", from: outbound, to: "down", in: &parameters)
+        copyString("network", from: outbound, to: "network", in: &parameters)
+        if kind == .hysteria && outbound["auth_str"] == nil { parameters["authType"] = "auth" }
 
         if kind == .vmess {
             copyString("security", from: outbound, to: "scy", in: &parameters)
@@ -342,10 +485,16 @@ enum ShareLinkParser {
             name: name,
             kind: kind,
             server: server,
-            port: port,
+            port: resolvedPort,
             credential: credential,
             parameters: parameters
         )
+    }
+
+    private static func firstServerPort(_ value: [String: Any]) -> Int? {
+        guard let ports = value["server_ports"] as? [String],
+              let first = ports.first else { return nil }
+        return Int(first.split(separator: ":").first ?? "")
     }
 
     private static func string(_ key: String, in object: [String: Any]) -> String? {
@@ -392,7 +541,7 @@ enum ShareLinkParser {
         }
     }
 
-    static func isProviderPlaceholder(_ profile: VPNProfile) -> Bool {
+    private static func isProviderPlaceholder(_ profile: VPNProfile) -> Bool {
         let normalizedName = profile.name.lowercased()
         let updateMessage = normalizedName.contains("обновите приложение")
             || normalizedName.contains("update app")
@@ -438,6 +587,29 @@ enum ShareLinkParser {
             return VPNProfile(name: name, kind: .trojan, server: host, port: port, credential: password, parameters: query)
         case "ss":
             return try parseShadowsocks(components: components, host: host, port: port, name: name, query: query)
+        case "hysteria":
+            let credential = components.user?.removingPercentEncoding
+                ?? query["auth_str"] ?? query["auth"] ?? query["password"]
+            guard let password = credential, !password.isEmpty else {
+                throw MaosVPNError.malformedProfile("Hysteria v1 auth is missing")
+            }
+            var parameters = query
+            if parameters["up_mbps"] == nil {
+                parameters["up_mbps"] = query["upmbps"] ?? query["upMbps"]
+            }
+            if parameters["down_mbps"] == nil {
+                parameters["down_mbps"] = query["downmbps"] ?? query["downMbps"]
+            }
+            if parameters["network"] == nil {
+                parameters["network"] = query["protocol"]
+            }
+            if parameters["sni"] == nil { parameters["sni"] = query["peer"] }
+            if parameters["obfs"] == nil { parameters["obfs"] = query["obfsParam"] }
+            if components.user == nil && query["auth"] != nil {
+                parameters["authType"] = "auth"
+            }
+            return VPNProfile(name: name, kind: .hysteria, server: host,
+                              port: port, credential: password, parameters: parameters)
         case "hysteria2", "hy2":
             guard let password = components.user?.removingPercentEncoding, !password.isEmpty else {
                 throw MaosVPNError.malformedProfile(AppLanguage.text(

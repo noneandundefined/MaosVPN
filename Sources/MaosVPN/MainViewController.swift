@@ -633,7 +633,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
                     self.finishAddingSubscription(name: name, kind: .remote, source: source,
                                                   profiles: payload.profiles, metadata: payload.metadata,
                                                   selectedUserAgent: payload.userAgent,
-                                                  comparedUserAgents: payload.comparisons)
+                                                  comparedUserAgents: payload.comparisons,
+                                                  diagnostics: payload.diagnostics)
                 case .failure(let error): self.showError(error)
                 }
             }
@@ -645,13 +646,15 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
         setSubscriptionBusy(true)
         showStatus(L10n.text(.loadingSubscription))
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result { try SubscriptionService.parseConfiguration(source) }
+            let result = Result { try SubscriptionService.parseConfigurationWithDiagnostics(source) }
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.setSubscriptionBusy(false)
                 switch result {
-                case .success(let profiles):
-                    self.finishAddingSubscription(name: name, kind: .json, source: source, profiles: profiles)
+                case .success(let payload):
+                    self.finishAddingSubscription(name: name, kind: .json, source: source,
+                                                  profiles: payload.profiles, metadata: payload.metadata,
+                                                  diagnostics: payload.diagnostics)
                 case .failure(let error): self.showError(error)
                 }
             }
@@ -661,18 +664,20 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private func finishAddingSubscription(name: String, kind: SubscriptionSourceKind, source: String,
                                           profiles: [VPNProfile], metadata: SubscriptionMetadata? = nil,
                                           selectedUserAgent: String? = nil,
-                                          comparedUserAgents: [SubscriptionCandidate] = []) {
+                                          comparedUserAgents: [SubscriptionCandidate] = [],
+                                          diagnostics: SubscriptionImportDiagnostics? = nil) {
         let entry = SubscriptionEntry(name: name, sourceKind: kind, source: source,
                                       profiles: profiles, metadata: metadata,
                                       selectedUserAgent: selectedUserAgent,
-                                      comparedUserAgents: comparedUserAgents)
+                                      comparedUserAgents: comparedUserAgents,
+                                      importDiagnostics: diagnostics)
         subscriptions.append(entry)
         persistLibrary()
         latencyByProfileID.removeAll()
         buildCurrentInterface()
         if let first = entry.profileNodes.first { select(node: first) }
         let format = selectedUserAgent.map { " · \($0)" } ?? ""
-        showStatus("\(L10n.text(.subscriptionUpdated)) \(profiles.count)\(format).")
+        showStatus(diagnostics?.summary ?? "\(L10n.text(.subscriptionUpdated)) \(profiles.count)\(format).")
     }
 
     @objc private func toggleConnection() {
@@ -875,7 +880,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     }
 
     private func protocolLabel(_ profile: VPNProfile) -> String {
-        let network = (profile.parameters["type"] ?? profile.parameters["net"] ?? (profile.kind == .hysteria2 ? "udp" : "tcp")).uppercased()
+        let udp = profile.kind == .hysteria || profile.kind == .hysteria2
+        let network = (profile.parameters["type"] ?? profile.parameters["net"] ?? (udp ? "udp" : "tcp")).uppercased()
         return "\(profile.kind.title) (\(network))"
     }
 
@@ -1071,7 +1077,8 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
                     guard self.subscriptions.contains(where: { $0.id == id }) else { return }
                     subscription.replaceProfiles(profiles, metadata: payload.metadata,
                                                  selectedUserAgent: payload.userAgent,
-                                                 comparedUserAgents: payload.comparisons)
+                                                 comparedUserAgents: payload.comparisons,
+                                                 diagnostics: payload.diagnostics)
                     let ids = Set(self.allProfiles.map(\.id))
                     self.latencyByProfileID = self.latencyByProfileID.filter { ids.contains($0.key) }
                     self.persistLibrary()
@@ -1092,7 +1099,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
                             english: " New servers will be active after the next VPN connection."
                         )
                         : ""
-                    self.showStatus(message + " [" + payload.userAgent + "]" + note)
+                    self.showStatus((payload.diagnostics?.summary ?? (message + " [" + payload.userAgent + "]")) + note)
                 }
             }
         }
@@ -1214,7 +1221,7 @@ final class MainViewController: NSViewController, NSOutlineViewDataSource, NSOut
     private func measureLatency(to profile: VPNProfile) -> Int? {
         // For TCP-based profiles, a real port connection is a better health
         // signal than ICMP to a hosting provider's address.
-        guard profile.kind != .hysteria2 else {
+        guard profile.kind != .hysteria2 && profile.kind != .hysteria else {
             return measureICMPLatency(to: profile.server)
         }
         guard (1...65535).contains(profile.port),
