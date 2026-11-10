@@ -152,6 +152,29 @@ final class SubscriptionUserAgentTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
+    func testFakeDeviceLimitProfileStopsWithoutTryingOtherClients() {
+        let lock = NSLock()
+        var attempts = 0
+        SubscriptionMockProtocol.handler = { request in
+            lock.lock()
+            attempts += 1
+            lock.unlock()
+            return (200, [:], Data(
+                "vless://123e4567-e89b-12d3-a456-426614174000@0.0.0.0:1#Update%20App".utf8
+            ))
+        }
+        let done = expectation(description: "No bypass of placeholder-based device limits")
+        service().loadWithMetadata(from: subscriptionURL) { result in
+            if case .success = result { XCTFail("Expected device rejection") }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 10)
+        lock.lock()
+        let count = attempts
+        lock.unlock()
+        XCTAssertEqual(count, 1)
+    }
+
     func testMalformedClientResponseFallsBackToSupportedFormat() {
         SubscriptionMockProtocol.handler = { [self] request in
             let agent = request.value(forHTTPHeaderField: "User-Agent") ?? ""
