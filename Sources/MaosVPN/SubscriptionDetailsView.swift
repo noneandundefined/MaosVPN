@@ -11,7 +11,7 @@ final class SubscriptionDetailsView: NSView {
 
     init(subscription: SubscriptionEntry) {
         self.subscription = subscription
-        super.init(frame: NSRect(x: 0, y: 0, width: 466, height: 260))
+        super.init(frame: NSRect(x: 0, y: 0, width: 466, height: 395))
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -102,6 +102,41 @@ final class SubscriptionDetailsView: NSView {
         actions.addArrangedSubview(revealButton)
         actions.addArrangedSubview(copy)
         stack.addArrangedSubview(actions)
+
+        let reportTitle = NSTextField(labelWithString: AppLanguage.text(
+            russian: "Диагностика импорта", english: "Import diagnostics"
+        ))
+        reportTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        reportTitle.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(reportTitle)
+
+        let report = NSTextView()
+        report.isEditable = false
+        report.isSelectable = true
+        report.isRichText = false
+        report.backgroundColor = .clear
+        report.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        if let diagnostics = subscription.importDiagnostics {
+            let lines = diagnostics.skipped.enumerated().map { _, skipped in
+                "• " + skipped.title + " [" + skipped.type + "]: " + skipped.reason
+            }
+            report.string = ([diagnostics.summary] + lines).joined(separator: "\n")
+        } else {
+            report.string = AppLanguage.text(
+                russian: "Сведения появятся после обновления подписки.",
+                english: "Details will appear after the subscription is refreshed."
+            )
+        }
+        let reportScroll = NSScrollView()
+        reportScroll.documentView = report
+        reportScroll.hasVerticalScroller = true
+        reportScroll.autohidesScrollers = true
+        reportScroll.drawsBackground = false
+        reportScroll.borderType = .bezelBorder
+        reportScroll.translatesAutoresizingMaskIntoConstraints = false
+        reportScroll.widthAnchor.constraint(equalToConstant: 445).isActive = true
+        reportScroll.heightAnchor.constraint(equalToConstant: 115).isActive = true
+        stack.addArrangedSubview(reportScroll)
 
         addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
