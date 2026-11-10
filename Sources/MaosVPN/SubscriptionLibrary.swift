@@ -13,6 +13,7 @@ final class SubscriptionEntry: NSObject, Codable {
     let source: String
     var profiles: [VPNProfile]
     var metadata: SubscriptionMetadata?
+    var importDiagnostics: SubscriptionImportDiagnostics?
     private(set) var profileNodes: [ProfileNode] = []
 
     init(
@@ -21,7 +22,8 @@ final class SubscriptionEntry: NSObject, Codable {
         sourceKind: SubscriptionSourceKind,
         source: String,
         profiles: [VPNProfile],
-        metadata: SubscriptionMetadata? = nil
+        metadata: SubscriptionMetadata? = nil,
+        importDiagnostics: SubscriptionImportDiagnostics? = nil
     ) {
         self.id = id
         self.name = name
@@ -29,12 +31,13 @@ final class SubscriptionEntry: NSObject, Codable {
         self.source = source
         self.profiles = profiles
         self.metadata = metadata
+        self.importDiagnostics = importDiagnostics
         super.init()
         rebuildNodes()
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, sourceKind, source, profiles, metadata
+        case id, name, sourceKind, source, profiles, metadata, importDiagnostics
     }
 
     required init(from decoder: Decoder) throws {
@@ -45,6 +48,7 @@ final class SubscriptionEntry: NSObject, Codable {
         source = try container.decode(String.self, forKey: .source)
         profiles = try container.decode([VPNProfile].self, forKey: .profiles)
         metadata = try container.decodeIfPresent(SubscriptionMetadata.self, forKey: .metadata)
+        importDiagnostics = try container.decodeIfPresent(SubscriptionImportDiagnostics.self, forKey: .importDiagnostics)
         super.init()
         rebuildNodes()
     }
@@ -57,10 +61,14 @@ final class SubscriptionEntry: NSObject, Codable {
         try container.encode(source, forKey: .source)
         try container.encode(profiles, forKey: .profiles)
         try container.encodeIfPresent(metadata, forKey: .metadata)
+        try container.encodeIfPresent(importDiagnostics, forKey: .importDiagnostics)
     }
 
-    func replaceProfiles(_ profiles: [VPNProfile], metadata: SubscriptionMetadata? = nil) {
+    func replaceProfiles(_ profiles: [VPNProfile],
+                         metadata: SubscriptionMetadata? = nil,
+                         diagnostics: SubscriptionImportDiagnostics? = nil) {
         self.metadata = metadata
+        self.importDiagnostics = diagnostics
         // Keep the UUID of each unchanged endpoint so a refresh does not lose
         // the current selection or its latency result.
         var unmatched = self.profiles
@@ -80,7 +88,8 @@ final class SubscriptionEntry: NSObject, Codable {
                 server: updated.server,
                 port: updated.port,
                 credential: updated.credential,
-                parameters: updated.parameters
+                parameters: updated.parameters,
+                sourceOutboundsJSON: updated.sourceOutboundsJSON
             )
         }
         rebuildNodes()
