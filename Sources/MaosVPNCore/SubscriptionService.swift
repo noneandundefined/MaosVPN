@@ -323,6 +323,16 @@ enum ShareLinkParser {
             }
         }
 
+        // SOCKS/HTTP/ShadowTLS and other auxiliary outbounds referenced by
+        // a chain are implemented as hops, not separate list entries.
+        var referenced = Set<String>()
+        for outbound in outbounds {
+            if let upstream = ProviderOutboundGraph.detour(outbound) { referenced.insert(upstream) }
+            if let group = outbound["outbounds"] as? [String] {
+                referenced.formUnion(group)
+            }
+        }
+
         var profiles: [VPNProfile] = []
         var skipped: [SkippedSubscriptionServer] = []
         var received = 0
@@ -330,6 +340,12 @@ enum ShareLinkParser {
             let kind = (item["type"] as? String)?.lowercased() ?? "unknown"
             // These are control outbounds, not VPN endpoints for the UI.
             if ["direct", "block", "dns", "selector", "urltest"].contains(kind) { continue }
+            if let tag = item["tag"] as? String,
+               referenced.contains(tag),
+               ProviderOutboundGraph.dependencies.contains(kind),
+               !ProviderOutboundGraph.endpoints.contains(kind) {
+                continue
+            }
             received += 1
             let title = String((item["tag"] as? String ?? "Node \(index + 1)").prefix(80))
             guard ProviderOutboundGraph.endpoints.contains(kind) else {
