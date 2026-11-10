@@ -11,7 +11,7 @@ final class SubscriptionDetailsView: NSView {
 
     init(subscription: SubscriptionEntry) {
         self.subscription = subscription
-        super.init(frame: NSRect(x: 0, y: 0, width: 466, height: 260))
+        super.init(frame: NSRect(x: 0, y: 0, width: 466, height: 310))
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -66,6 +66,23 @@ final class SubscriptionDetailsView: NSView {
         )
         stack.addArrangedSubview(controlRow(
             AppLanguage.text(russian: "Поддержка", english: "Support"), supportButton))
+
+        if let client = subscription.selectedUserAgent {
+            stack.addArrangedSubview(textRow(
+                AppLanguage.text(russian: "Формат подписки", english: "Subscription format"), client
+            ))
+            if !subscription.comparedUserAgents.isEmpty {
+                let summary = subscription.comparedUserAgents.map { item in
+                    let name = item.userAgent.components(separatedBy: "/").first ?? item.userAgent
+                    return "\(name): \(item.compatibleCount)"
+                }.joined(separator: " · ")
+                let row = textRow(
+                    AppLanguage.text(russian: "Сравнение", english: "Compared"), summary
+                )
+                row.toolTip = summary
+                stack.addArrangedSubview(row)
+            }
+        }
 
         let sourceTitle = NSTextField(labelWithString: AppLanguage.text(
             russian: "Ссылка подписки", english: "Subscription URL"
