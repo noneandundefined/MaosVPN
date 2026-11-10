@@ -21,55 +21,122 @@ public final class SubscriptionService {
         }
     }
 
+    /// Request multiple common client formats. Select the *one complete response*
+    /// with the highest count of usable proxies. Never concatenate formats
+    /// since providers can change credentials, detour chains or device limits.
+    /// Identical HWID headers are sent for every variation.
     public func loadWithMetadata(from url: URL, completion: @escaping (Result<SubscriptionResponse, Error>) -> Void) {
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
-        var request = Self.makeRequest(
-            for: url,
-            hardwareID: hardwareID,
-            osVersion: "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
-        )
-        request.timeoutInterval = 20
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let version = "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
+        let userAgents = ["Karing", "Happ", "sing-box", "v2rayN"]
+        let lock = NSLock()
+        let group = DispatchGroup()
 
-        session.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                completion(.failure(MaosVPNError.malformedProfile(AppLanguage.text(
-                    russian: "сервер подписки вернул HTTP \(http.statusCode)",
-                    english: "the subscription server returned HTTP \(http.statusCode)"
-                ))))
-                return
-            }
-            if let http = response as? HTTPURLResponse,
-               http.value(forHTTPHeaderField: "x-hwid-not-supported")?.lowercased() == "true" {
+        var winner: SubscriptionResponse?
+        var errors: [Error] = []
+        var anyAccessDenied = false
+
+        for agent in userAgents {
+            group.enter()
+            var request = Self.makeRequest(
+                for: url, hardwareID: hardwareID, osVersion: version, userAgent: agent
+            )
+            request.timeoutInterval = 15
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+
+            session.dataTask(with: request) { data, response, error in
+                defer { group.leave() }
+                let result = Self.interpretSubscriptionResponse(
+                    data: data, response: response, error: error, userAgent: agent
+                )
+                lock.lock()
+                defer { lock.unlock() }
+                switch result {
+                case .success(let value):
+                    if let previous = winner {
+                        if value.profiles.count > previous.profiles.count ||
+                           (value.profiles.count == previous.profiles.count &&
+                            previous.metadata == nil && value.metadata != nil) {
+                            winner = value
+                        }
+                    } else {
+                        winner = value
+                    }
+                case .failure(let failure):
+                    if case MaosVPNError.subscriptionAccessRejected = failure {
+                        anyAccessDenied = true
+                    }
+                    errors.append(failure)
+                }
+            }.resume()
+        }
+
+        group.notify(queue: .global(qos: .userInitiated)) {
+            lock.lock()
+            let best = winner
+            let failure = errors.first
+            let denied = anyAccessDenied
+            lock.unlock()
+            if let best = best {
+                completion(.success(best))
+            } else if denied {
                 completion(.failure(MaosVPNError.subscriptionAccessRejected))
-                return
+            } else {
+                completion(.failure(failure ?? MaosVPNError.unsupportedSubscription))
             }
-            guard let data = data, !data.isEmpty else {
-                completion(.failure(MaosVPNError.emptySubscription))
-                return
+        }
+    }
+
+    private static func interpretSubscriptionResponse(
+        data: Data?, response: URLResponse?, error: Error?, userAgent: String
+    ) -> Result<SubscriptionResponse, Error> {
+        if let error = error { return .failure(error) }
+        if let http = response as? HTTPURLResponse {
+            if http.value(forHTTPHeaderField: "x-hwid-not-supported")?.lowercased() == "true" {
+                return .failure(MaosVPNError.subscriptionAccessRejected)
             }
-            guard data.count <= 10 * 1024 * 1024 else {
-                completion(.failure(MaosVPNError.malformedProfile(AppLanguage.text(
+            guard (200...299).contains(http.statusCode) else {
+                return .failure(MaosVPNError.malformedProfile(
+                    AppLanguage.text(
+                        russian: "сервер подписки вернул HTTP \(http.statusCode)",
+                        english: "subscription returned HTTP \(http.statusCode)"
+                    )
+                ))
+            }
+        }
+        guard let data = data, !data.isEmpty else {
+            return .failure(MaosVPNError.emptySubscription)
+        }
+        guard data.count <= 10 * 1024 * 1024 else {
+            return .failure(MaosVPNError.malformedProfile(
+                AppLanguage.text(
                     russian: "ответ подписки превышает 10 МБ",
-                    english: "the subscription response exceeds 10 MB"
-                ))))
-                return
-            }
-            do {
-                let profiles = try ShareLinkParser.parseSubscription(data)
-                let metadata = SubscriptionMetadata.parse(response: response as? HTTPURLResponse, body: data)
-                completion(.success(SubscriptionResponse(profiles: profiles, metadata: metadata)))
-            } catch {
-                completion(.failure(error))
-            }
-        }.resume()
+                    english: "subscription response exceeds 10 MB"
+                )
+            ))
+        }
+        do {
+            let parsed = try ShareLinkParser.parseDetailed(data)
+            return .success(SubscriptionResponse(
+                profiles: parsed.profiles,
+                metadata: SubscriptionMetadata.parse(
+                    response: response as? HTTPURLResponse, body: data
+                ),
+                diagnostics: SubscriptionImportDiagnostics(
+                    received: parsed.received, imported: parsed.profiles.count,
+                    skipped: parsed.skipped, userAgent: userAgent
+                )
+            ))
+        } catch {
+            return .failure(error)
+        }
     }
 
     public static func parseConfiguration(_ text: String) throws -> [VPNProfile] {
+        try parseConfigurationWithDiagnostics(text).profiles
+    }
+
+    public static func parseConfigurationWithDiagnostics(_ text: String) throws -> SubscriptionResponse {
         let data = Data(text.utf8)
         guard !data.isEmpty else { throw MaosVPNError.emptySubscription }
         guard data.count <= 10 * 1024 * 1024 else {
@@ -78,7 +145,16 @@ public final class SubscriptionService {
                 english: "the configuration exceeds 10 MB"
             ))
         }
-        return try ShareLinkParser.parseSubscription(data)
+        let parsed = try ShareLinkParser.parseDetailed(data)
+        return SubscriptionResponse(
+            profiles: parsed.profiles,
+            metadata: SubscriptionMetadata.parse(response: nil, body: data),
+            diagnostics: SubscriptionImportDiagnostics(
+                received: parsed.received, imported: parsed.profiles.count,
+                skipped: parsed.skipped,
+                userAgent: AppLanguage.text(russian: "Локальный JSON", english: "Local JSON")
+            )
+        )
     }
 
     static func persistentHardwareID(in defaults: UserDefaults) -> String {
@@ -96,14 +172,15 @@ public final class SubscriptionService {
         for url: URL,
         hardwareID: String,
         osVersion: String,
-        deviceModel: String = "Mac"
+        deviceModel: String = "Mac",
+        userAgent: String = "Karing"
     ) -> URLRequest {
         var request = URLRequest(url: url)
 
         // Karing-compatible panels return a sing-box JSON document. The
         // stable device headers prevent HWID-enabled panels from returning a
         // fake 0.0.0.0:1 update profile.
-        request.setValue("Karing", forHTTPHeaderField: "User-Agent")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(hardwareID, forHTTPHeaderField: "X-Hwid")
         request.setValue("macOS", forHTTPHeaderField: "X-Device-Os")
         request.setValue(osVersion, forHTTPHeaderField: "X-Ver-Os")
