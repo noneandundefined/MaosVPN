@@ -1,33 +1,26 @@
 import Foundation
 
-/// Builds a sing-box urltest group so the core can switch servers without
-/// restarting the TUN interface or requesting administrator privileges again.
+/// sing-box urltest checks complete proxy routes and switches the selected
+/// outbound for new connections without restarting the TUN interface.
 public enum AutomaticConfigBuilder {
     public static func makeConfig(for profiles: [VPNProfile]) throws -> [String: Any] {
         guard !profiles.isEmpty else { throw MaosVPNError.emptySubscription }
-        guard let first = profiles.first(where: { (try? SingBoxConfigBuilder.makeConfig(for: $0)) != nil }) else {
-            throw MaosVPNError.unsupportedSubscription
-        }
+        guard let first = profiles.first(where: {
+            (try? SingBoxConfigBuilder.makeOutbounds(for: $0, primaryTag: "proxy")) != nil
+        }) else { throw MaosVPNError.unsupportedSubscription }
         var config = try SingBoxConfigBuilder.makeConfig(for: first)
+
         var outbounds: [[String: Any]] = []
         var tags: [String] = []
         var domains = Set<String>()
-
-        for profile in profiles {
-            // A malformed individual node must not break every valid server.
-            guard let candidate = try? SingBoxConfigBuilder.makeConfig(for: profile),
-                  let candidateOutbounds = candidate["outbounds"] as? [[String: Any]],
-                  var proxy = candidateOutbounds.first else { continue }
-            let tag = "proxy-\(tags.count)"
-            proxy["tag"] = tag
-            outbounds.append(proxy)
-            tags.append(tag)
-
-            let parts = profile.server.split(separator: ".")
-            let isIPv4 = parts.count == 4 && parts.allSatisfy { Int($0).map { (0...255).contains($0) } ?? false }
-            if !isIPv4 && !profile.server.contains(":") {
-                domains.insert(profile.server)
+        for (index, profile) in profiles.enumerated() {
+            let tag = "proxy-\(index)"
+            guard let chain = try? SingBoxConfigBuilder.makeOutbounds(for: profile, primaryTag: tag) else {
+                continue
             }
+            outbounds.append(contentsOf: chain)
+            tags.append(tag)
+            domains.formUnion(ProviderOutboundGraph.domains(in: chain))
         }
         guard !tags.isEmpty else { throw MaosVPNError.unsupportedSubscription }
 
