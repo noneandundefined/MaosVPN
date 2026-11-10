@@ -90,12 +90,30 @@ public struct SubscriptionMetadata: Codable, Equatable {
     }
 }
 
+/// Summary of one compatible subscription response. A value of zero means
+/// that this client's format contained no importable nodes, not necessarily
+/// that the provider had no nodes.
+public struct SubscriptionCandidate: Codable, Equatable {
+    public let userAgent: String
+    public let compatibleCount: Int
+
+    public init(userAgent: String, compatibleCount: Int) {
+        self.userAgent = userAgent
+        self.compatibleCount = compatibleCount
+    }
+}
+
 public struct SubscriptionResponse {
     public let profiles: [VPNProfile]
     public let metadata: SubscriptionMetadata?
+    public let userAgent: String
+    public let comparisons: [SubscriptionCandidate]
 
-    public init(profiles: [VPNProfile], metadata: SubscriptionMetadata?) {
+    public init(profiles: [VPNProfile], metadata: SubscriptionMetadata?,
+                userAgent: String = "Karing", comparisons: [SubscriptionCandidate] = []) {
         self.profiles = profiles
         self.metadata = metadata
+        self.userAgent = userAgent
+        self.comparisons = comparisons
     }
 }
