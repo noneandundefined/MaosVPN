@@ -21,51 +21,137 @@ public final class SubscriptionService {
         }
     }
 
+    // Panels often serve sing-box JSON to Karing but share links to Happ or
+    // v2rayNG. Test a small, fixed list sequentially (not in parallel) and
+    // choose the largest *importable* result. Never merge unrelated formats.
+    static let candidateUserAgents = [
+        "Karing",
+        "Happ/3.3.6",
+        "v2rayNG/2.2.6",
+        "sing-box/1.13.14"
+    ]
+
+    private struct Choice {
+        let profiles: [VPNProfile]
+        let metadata: SubscriptionMetadata?
+        let userAgent: String
+    }
+
     public func loadWithMetadata(from url: URL, completion: @escaping (Result<SubscriptionResponse, Error>) -> Void) {
-        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
-        var request = Self.makeRequest(
-            for: url,
-            hardwareID: hardwareID,
-            osVersion: "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
-        )
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        let osVersion = "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
+        probe(url: url, osVersion: osVersion, index: 0, best: nil, fallbackMetadata: nil,
+              comparisons: [], firstError: nil, completion: completion)
+    }
+
+    private func finish(best: Choice?, fallbackMetadata: SubscriptionMetadata?,
+                        comparisons: [SubscriptionCandidate], error: Error?,
+                        completion: @escaping (Result<SubscriptionResponse, Error>) -> Void) {
+        guard let chosen = best else {
+            completion(.failure(error ?? MaosVPNError.unsupportedSubscription))
+            return
+        }
+        completion(.success(SubscriptionResponse(
+            profiles: chosen.profiles,
+            metadata: chosen.metadata ?? fallbackMetadata,
+            userAgent: chosen.userAgent,
+            comparisons: comparisons
+        )))
+    }
+
+    private func probe(url: URL, osVersion: String, index: Int, best: Choice?,
+                       fallbackMetadata: SubscriptionMetadata?,
+                       comparisons: [SubscriptionCandidate], firstError: Error?,
+                       completion: @escaping (Result<SubscriptionResponse, Error>) -> Void) {
+        guard index < Self.candidateUserAgents.count else {
+            finish(best: best, fallbackMetadata: fallbackMetadata,
+                   comparisons: comparisons, error: firstError, completion: completion)
+            return
+        }
+        let userAgent = Self.candidateUserAgents[index]
+        var request = Self.makeRequest(for: url, hardwareID: hardwareID,
+                                       osVersion: osVersion, userAgent: userAgent)
         request.timeoutInterval = 20
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
 
-        session.dataTask(with: request) { data, response, error in
+        session.dataTask(with: request) { [self] data, response, error in
+            // A transient network error likely affects every variant; stop
+            // rather than hammering a struggling provider with more requests.
             if let error = error {
-                completion(.failure(error))
+                self.finish(best: best, fallbackMetadata: fallbackMetadata,
+                            comparisons: comparisons, error: firstError ?? error, completion: completion)
                 return
             }
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                completion(.failure(MaosVPNError.malformedProfile(AppLanguage.text(
-                    russian: "сервер подписки вернул HTTP \(http.statusCode)",
-                    english: "the subscription server returned HTTP \(http.statusCode)"
-                ))))
+            guard let http = response as? HTTPURLResponse else {
+                self.finish(best: best, fallbackMetadata: fallbackMetadata,
+                            comparisons: comparisons, error: firstError ?? MaosVPNError.unsupportedSubscription,
+                            completion: completion)
                 return
             }
-            if let http = response as? HTTPURLResponse,
-               http.value(forHTTPHeaderField: "x-hwid-not-supported")?.lowercased() == "true" {
-                completion(.failure(MaosVPNError.subscriptionAccessRejected))
+
+            // Never try to work around provider authentication, device limits
+            // or rate limiting by changing the User-Agent.
+            if http.value(forHTTPHeaderField: "x-hwid-not-supported")?.lowercased() == "true" ||
+                http.statusCode == 401 || http.statusCode == 403 || http.statusCode == 429 {
+                let rejection: Error = http.value(forHTTPHeaderField: "x-hwid-not-supported")?.lowercased() == "true"
+                    ? MaosVPNError.subscriptionAccessRejected
+                    : MaosVPNError.malformedProfile(AppLanguage.text(
+                        russian: "сервер подписки вернул HTTP \(http.statusCode)",
+                        english: "the subscription server returned HTTP \(http.statusCode)"
+                    ))
+                self.finish(best: best, fallbackMetadata: fallbackMetadata,
+                            comparisons: comparisons, error: firstError ?? rejection, completion: completion)
                 return
             }
-            guard let data = data, !data.isEmpty else {
-                completion(.failure(MaosVPNError.emptySubscription))
-                return
+
+            var nextBest = best
+            var nextMetadata = fallbackMetadata
+            var nextComparisons = comparisons
+            var nextError = firstError
+            if (200...299).contains(http.statusCode), let data = data, !data.isEmpty,
+               data.count <= 10 * 1024 * 1024 {
+                do {
+                    let parsed = try ShareLinkParser.parseSubscription(data)
+                    // The parser intentionally skips protocols that MaosVPN
+                    // cannot currently represent. Also exclude obvious panel
+                    // placeholders and configurations our builder rejects.
+                    let compatible = parsed.filter { profile in
+                        !ShareLinkParser.isProviderPlaceholder(profile) &&
+                            (try? SingBoxConfigBuilder.makeConfig(for: profile)) != nil
+                    }
+                    let metadata = SubscriptionMetadata.parse(response: http, body: data)
+                    if nextMetadata == nil { nextMetadata = metadata }
+                    nextComparisons.append(SubscriptionCandidate(userAgent: userAgent,
+                                                                  compatibleCount: compatible.count))
+                    if !compatible.isEmpty && compatible.count > (best?.profiles.count ?? 0) {
+                        nextBest = Choice(profiles: compatible, metadata: metadata, userAgent: userAgent)
+                    }
+                } catch {
+                    // Some panels express a device limit as a fake 0.0.0.0:1
+                    // update-required profile instead of an HTTP error.
+                    if let rejected = error as? MaosVPNError,
+                       case .subscriptionAccessRejected = rejected {
+                        self.finish(best: best, fallbackMetadata: fallbackMetadata,
+                                    comparisons: comparisons, error: rejected, completion: completion)
+                        return
+                    }
+                    if nextError == nil { nextError = error }
+                    nextComparisons.append(SubscriptionCandidate(userAgent: userAgent, compatibleCount: 0))
+                }
+            } else {
+                if nextError == nil {
+                    nextError = MaosVPNError.malformedProfile(AppLanguage.text(
+                        russian: "сервер подписки вернул HTTP \(http.statusCode) или пустой ответ",
+                        english: "the subscription server returned HTTP \(http.statusCode) or an empty response"
+                    ))
+                }
+                nextComparisons.append(SubscriptionCandidate(userAgent: userAgent, compatibleCount: 0))
             }
-            guard data.count <= 10 * 1024 * 1024 else {
-                completion(.failure(MaosVPNError.malformedProfile(AppLanguage.text(
-                    russian: "ответ подписки превышает 10 МБ",
-                    english: "the subscription response exceeds 10 MB"
-                ))))
-                return
-            }
-            do {
-                let profiles = try ShareLinkParser.parseSubscription(data)
-                let metadata = SubscriptionMetadata.parse(response: response as? HTTPURLResponse, body: data)
-                completion(.success(SubscriptionResponse(profiles: profiles, metadata: metadata)))
-            } catch {
-                completion(.failure(error))
-            }
+
+            self.probe(url: url, osVersion: osVersion, index: index + 1,
+                       best: nextBest, fallbackMetadata: nextMetadata,
+                       comparisons: nextComparisons, firstError: nextError,
+                       completion: completion)
         }.resume()
     }
 
@@ -96,14 +182,15 @@ public final class SubscriptionService {
         for url: URL,
         hardwareID: String,
         osVersion: String,
-        deviceModel: String = "Mac"
+        deviceModel: String = "Mac",
+        userAgent: String = "Karing"
     ) -> URLRequest {
         var request = URLRequest(url: url)
 
         // Karing-compatible panels return a sing-box JSON document. The
         // stable device headers prevent HWID-enabled panels from returning a
         // fake 0.0.0.0:1 update profile.
-        request.setValue("Karing", forHTTPHeaderField: "User-Agent")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(hardwareID, forHTTPHeaderField: "X-Hwid")
         request.setValue("macOS", forHTTPHeaderField: "X-Device-Os")
         request.setValue(osVersion, forHTTPHeaderField: "X-Ver-Os")
@@ -305,7 +392,7 @@ enum ShareLinkParser {
         }
     }
 
-    private static func isProviderPlaceholder(_ profile: VPNProfile) -> Bool {
+    static func isProviderPlaceholder(_ profile: VPNProfile) -> Bool {
         let normalizedName = profile.name.lowercased()
         let updateMessage = normalizedName.contains("обновите приложение")
             || normalizedName.contains("update app")

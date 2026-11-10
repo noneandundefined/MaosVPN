@@ -2,6 +2,19 @@
 
 All notable user-facing changes will be documented here. The project follows semantic versioning where practical.
 
+## [1.2.2] - 2026-11-10
+
+### Added
+- Compare subscription responses with Karing, Happ, v2rayNG, and sing-box User-Agent headers.
+- Automatically choose the response containing the highest number of importable MaosVPN profiles, not the largest HTTP body.
+- Show the winning client format and counts from each supported response in subscription details.
+
+### Security and compatibility
+- The original subscription URL and stable device-identification headers are reused for all requests.
+- Requests are sequential and capped at four; probing stops immediately on access denial, device rejection, network failure, or HTTP 429 throttling.
+- Do not combine incompatible formats or import profiles rejected by the MaosVPN config builder.
+- Live provider verification depends on the user's private subscription link. Tests use local HTTP mocks only.
+
 ## [1.2.1] - 2026-11-10
 
 ### Added
