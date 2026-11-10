@@ -127,6 +127,14 @@ public final class SubscriptionService {
                         nextBest = Choice(profiles: compatible, metadata: metadata, userAgent: userAgent)
                     }
                 } catch {
+                    // Some panels express a device limit as a fake 0.0.0.0:1
+                    // update-required profile instead of an HTTP error.
+                    if let rejected = error as? MaosVPNError,
+                       case .subscriptionAccessRejected = rejected {
+                        self.finish(best: best, fallbackMetadata: fallbackMetadata,
+                                    comparisons: comparisons, error: rejected, completion: completion)
+                        return
+                    }
                     if nextError == nil { nextError = error }
                     nextComparisons.append(SubscriptionCandidate(userAgent: userAgent, compatibleCount: 0))
                 }
