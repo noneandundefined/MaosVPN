@@ -2,6 +2,24 @@
 
 All notable user-facing changes will be documented here. The project follows semantic versioning where practical.
 
+## [1.3.0] - 2026-11-10
+
+### Added
+- Import Hysteria v1 share links and sing-box JSON (separate from Hysteria2), including authentication, bandwidth and TLS.
+- Preserve provider-specific outbound TLS/transport options and recursively resolve `detour` / selector / urltest dependencies in multi-hop sing-box JSON.
+- Show received, imported and skipped counts and per-node explanations in subscription details; report does not contain credentials or subscription URLs.
+- The existing sequential four-User-Agent comparison now evaluates detailed compatibility including chained proxy nodes, choosing one coherent provider response.
+
+### Fixed
+- Unsupported JSON proxy types and broken chains are no longer dropped without explanation.
+- Smart auto-selection retains per-server dependent proxy chains with collision-free tags.
+- Hysteria v1 is displayed as UDP traffic and is measured without false TCP-port probing.
+
+### Compatibility
+- Provider HTTP 401/403/429, HWID rejection and network failures still stop UA probing, as in v1.2.2. Device limits are never bypassed.
+- Configuration fixtures are validated against the bundled macOS Intel sing-box core.
+- Refresh the existing subscription and open its information panel to inspect import results.
+
 ## [1.2.2] - 2026-11-10
 
 ### Added
