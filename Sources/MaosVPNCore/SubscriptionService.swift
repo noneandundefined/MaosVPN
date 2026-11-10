@@ -63,7 +63,8 @@ public final class SubscriptionService {
                         winner = value
                     }
                 case .failure(let failure):
-                    if case MaosVPNError.subscriptionAccessRejected = failure {
+                    if let vpnError = failure as? MaosVPNError,
+                       case .subscriptionAccessRejected = vpnError {
                         anyAccessDenied = true
                     }
                     errors.append(failure)
