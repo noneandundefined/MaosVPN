@@ -2,6 +2,25 @@
 
 All notable user-facing changes will be documented here. The project follows semantic versioning where practical.
 
+## [1.2.2] - 2026-11-10
+
+### Added
+- Hysteria v1 share links and sing-box JSON import (distinct from Hysteria2), including credentials, bandwidth and TLS fields.
+- Import of complex sing-box outbound chains using `detour`, `selector` and `urltest` dependencies, preserving provider TLS and transport details.
+- Visible import diagnostics: received/imported/skipped counts, selected User-Agent and individual skip explanations in subscription details.
+- Automatic comparison of Karing, Happ, sing-box and v2rayN User-Agent responses on the same subscription URL, using the response with the most compatible servers.
+
+### Changed
+- Unsupported JSON outbounds and malformed share links are never skipped silently; diagnostics report why an entry is unsupported.
+- Smart auto server retains dependent proxy graphs with unique tags rather than losing chained nodes.
+- Never concatenate or merge separate provider responses, which could mix incompatible credentials or configuration graphs.
+- All requests retain the same stable device headers; the original subscription URL and credentials are not included in diagnostics.
+
+### Notes
+- Only protocols supported by the bundled sing-box and MaosVPN parser are imported. Unsupported protocols are shown as skipped, not misrepresented as working servers.
+- To inspect the selected User-Agent and rejected entries for an existing subscription, click refresh (↻) then info (ⓘ).
+- No actual private provider URL is available to the build system; compatibility is validated with local fixtures and mocked HTTP responses.
+
 ## [1.2.1] - 2026-11-10
 
 ### Added
